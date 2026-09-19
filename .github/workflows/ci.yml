@@ -164,8 +164,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      # Packaging extracts another source tree under target/package. Cache only
+      # registry data here so cache cleanup does not traverse the extracted crate.
       - uses: Swatinem/rust-cache@v2
         with:
+          cache-targets: false
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Compile benchmarks
         run: cargo bench --locked --bench throughput --no-run
