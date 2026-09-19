@@ -1,0 +1,55 @@
+md5-simd — third-party notices
+==============================
+
+The crate is distributed under Apache-2.0. RFC 1321 supplies the MD5 algorithm,
+constants, and standard vectors. The portable Rust and batch implementations
+are maintained in this tree.
+
+Vendored scalar compression
+---------------------------
+
+src/simd/single_x86.rs and src/simd/single_stream.rs adapt the compression path
+from fast-md5 1.0.0, Copyright (c) 2026, Latigo LLC, under BSD-2-Clause.
+Source: https://github.com/ogital-net/fast-md5
+The assembly's upstream provenance is animetosho/md5-optimisation (PD/CC0):
+https://github.com/animetosho/md5-optimisation
+
+The integration retains the assembly body, uses the shared in-tree K constants,
+and routes framing and state management through the crate's own implementation.
+These files are compiled for x86_64 with opt unless force-portable is enabled.
+No third-party streaming or HMAC API is re-exported.
+
+Design references
+-----------------
+
+md5-many (https://github.com/Small-Ku/md5-many), MIT OR Apache-2.0, informed the
+separation of single-message and batch APIs and differential testing. Its source
+is not vendored. RustCrypto md-5 is a development-only correctness reference.
+
+Third-party license text
+------------------------
+
+### fast-md5 1.0.0 — BSD 2-Clause License
+
+Copyright (c) 2026, Latigo LLC
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

@@ -1,0 +1,182 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  CARGO_INCREMENTAL: "0"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  format:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+      - name: Release metadata guard tests
+        run: python3 -m unittest discover -s .github/scripts -p "test_*.py" -v
+
+  test:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Native x86_64 and aarch64; ISA use still depends on detected CPU support.
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Toolchain
+        run: |
+          rustc --version --verbose
+          cargo --version
+      # Keep feature checks in the same runner to reuse compiled dependencies.
+      # cargo test includes doctests; --all-targets alone would skip them.
+      - name: Default features
+        run: cargo test --locked
+      - name: All features
+        run: cargo test --locked --all-features
+      - name: Portable override
+        run: cargo test --locked --features force-portable
+      - name: Minimal library
+        run: cargo test --locked --no-default-features
+      - name: Portable with std
+        run: cargo test --locked --no-default-features --features std
+      - name: Optimized single stream
+        run: cargo test --locked --no-default-features --features std,opt
+      - name: SIMD without Digest
+        run: cargo test --locked --no-default-features --features std,simd
+      - name: Digest without std
+        run: cargo test --locked --no-default-features --features digest
+      - name: SIMD and Digest without std
+        run: cargo test --locked --no-default-features --features simd,digest
+      - name: Zeroize without std
+        run: cargo test --locked --no-default-features --features zeroize
+      - name: Zeroize with acceleration
+        run: cargo test --locked --features zeroize
+      - name: Scalar pair path
+        run: cargo test --locked --no-default-features --features std,pair-interleave
+      - name: Legacy backend alias
+        run: cargo test --locked --no-default-features --features std,backend-fast-md5
+      - name: Release API and boundary contracts
+        run: cargo test --locked --release --test api_surface --test boundaries --test many
+
+  quality:
+    name: Lints and docs (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # all-features enables force-portable and excludes the ISA adapters.
+      - name: Accelerated code lints
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: All-features lints
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: no_std lints
+        run: cargo clippy --locked --lib --no-default-features --features opt,simd,digest,zeroize -- -D warnings
+      - name: Documentation (docs.rs features)
+        run: cargo doc --locked --no-deps --features zeroize,pair-interleave
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Documentation (minimal library)
+        run: cargo doc --locked --no-deps --no-default-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  no-std:
+    name: no_std (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - wasm32-unknown-unknown
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Minimal library
+        run: cargo check --locked --lib --target ${{ matrix.target }} --no-default-features
+      - name: Optional APIs and acceleration
+        run: cargo check --locked --lib --target ${{ matrix.target }} --no-default-features --features opt,simd,digest,zeroize
+
+  package:
+    name: Package verification
+    needs: [format, test, quality, no-std]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Compile benchmarks
+        run: cargo bench --locked --bench throughput --no-run
+      - name: Run examples
+        run: |
+          cargo run --locked --example basic
+          cargo run --locked --example etag_stream
+          cargo run --locked --example multi
+          cargo run --locked --release --example checksum_profile
+      # Verification only: CI has no registry token or publishing step.
+      - name: Inspect package contents
+        run: cargo package --locked --list
+      - name: Build and verify the package
+        run: cargo package --locked

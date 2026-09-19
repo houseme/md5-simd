@@ -1,0 +1,93 @@
+[package]
+name = "md5-simd"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "High-throughput MD5 for object-storage checksums: Clone-friendly ETag API, x86_64 assembly, SIMD multi-buffer batches"
+repository = "https://github.com/houseme/md5-simd"
+homepage = "https://github.com/houseme/md5-simd"
+documentation = "https://docs.rs/md5-simd"
+readme = "README.md"
+keywords = ["md5", "simd", "hash", "checksum", "etag"]
+categories = ["algorithms", "cryptography"]
+# Ship only source, examples, tests, and consumer documentation.
+include = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE",
+    "src/**",
+    "tests/**",
+    "examples/**",
+    "benches/**",
+    "docs/architecture.md",
+    "docs/performance.md",
+    "docs/validation/*.json",
+]
+
+[package.metadata.docs.rs]
+features = ["zeroize", "pair-interleave"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+# Default APIs and acceleration; force-portable takes precedence over opt and simd.
+default = ["std", "opt", "digest", "simd"]
+std = []
+digest = ["dep:digest"]
+# Textbook oracle for CI / differential tests; disables acceleration.
+force-portable = []
+# Vendored single-stream assembly (src/simd/single_stream.rs + single_x86.rs; NOTICE).
+opt = []
+# Legacy feature name; enables `opt`.
+backend-fast-md5 = ["opt"]
+simd = []
+zeroize = []
+pair-interleave = []
+
+[dependencies]
+digest = { version = "0.11.3", default-features = false, features = ["block-api"], optional = true }
+
+[dev-dependencies]
+# Correctness oracle only — not used by the library itself.
+md-5 = "0.11.0"
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+proptest = "1"
+
+[[bench]]
+name = "throughput"
+harness = false
+required-features = ["std"]
+
+[[example]]
+name = "basic"
+required-features = ["std"]
+
+[[example]]
+name = "etag_stream"
+required-features = ["std"]
+
+[[example]]
+name = "multi"
+required-features = ["std"]
+
+[[example]]
+name = "probe"
+required-features = ["std"]
+
+[[example]]
+name = "compare_1mib"
+required-features = ["std"]
+
+[[example]]
+name = "checksum_profile"
+required-features = ["std"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+lto = "thin"
+codegen-units = 1
