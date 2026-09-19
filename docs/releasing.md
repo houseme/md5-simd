@@ -103,8 +103,9 @@ Remote CI and native ISA coverage remain separate release evidence.
   warnings fail the job; it does not create issues or modify dependency versions.
 - `release.yml` starts on `v*` tag pushes or manual dispatch **on a version tag**.
   It requires the tag to equal `v` plus the Cargo version, a clean checkout, and a
-  commit in `main` history. It reuses CI and Audit, runs `cargo publish --dry-run`,
-  and retains the verified `.crate` as a workflow artifact for 14 days.
+  commit in `main` history. It reuses CI and Audit, runs `cargo package` first to
+  create the archive, then runs `cargo publish --dry-run`, and retains the verified
+  `.crate` as a workflow artifact for 14 days.
 
 Tag pushes create release candidates only. Actual registry upload additionally
 requires manual dispatch with `publish=true` and the `crates-io` environment.

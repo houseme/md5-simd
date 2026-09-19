@@ -62,6 +62,16 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      - name: Build the crate archive
+        run: cargo package --locked
+      - name: Verify the crate archive path
+        env:
+          CRATE_NAME: ${{ needs.validate.outputs.name }}
+          CRATE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          archive="target/package/${CRATE_NAME}-${CRATE_VERSION}.crate"
+          test -s "$archive"
+          tar -tzf "$archive" >/dev/null
       - name: Registry publication rehearsal
         run: cargo publish --locked --registry crates-io --dry-run
       - name: Retain the verified crate
