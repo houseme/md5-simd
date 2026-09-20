@@ -208,7 +208,7 @@ unsafe fn gather_groups_at<W: Wide>(
 ///
 /// Independent 64-step chains are advanced together so rotate/add latency on
 /// one group is covered by other groups' vector ops.
-#[inline(never)]
+#[inline(always)]
 fn compress_groups_interleaved<W: Wide>(
     states: &mut [[W::V; 4]; MAX_GROUPS],
     ms: &[[W::V; 16]; MAX_GROUPS],

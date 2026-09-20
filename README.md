@@ -155,7 +155,7 @@ On Apple Silicon, same-host ABBA measurements show the intended batch shape:
 | Workload | NEON result vs sequential `md-5` |
 | --- | ---: |
 | 8 independent × 1 MiB | **3.10×** |
-| 16 independent × 1 MiB | **2.35×** |
+| 16 independent × 1 MiB | **2.40×** |
 | 7 independent × 1 MiB tail batch | **2.67×** |
 | 9 independent × 1 MiB with one scalar tail | **1.73×** |
 | grouped mixed lengths | **1.60×** |
