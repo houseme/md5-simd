@@ -208,20 +208,19 @@ unsafe fn gather_groups_at<W: Wide>(
 ///
 /// Independent 64-step chains are advanced together so rotate/add latency on
 /// one group is covered by other groups' vector ops.
-#[inline(always)]
-fn compress_groups_interleaved<W: Wide>(
+#[inline(never)]
+fn compress_groups_interleaved<W: Wide, const GROUPS: usize>(
     states: &mut [[W::V; 4]; MAX_GROUPS],
     ms: &[[W::V; 16]; MAX_GROUPS],
-    ngroups: usize,
 ) {
-    debug_assert!(ngroups >= 2);
+    debug_assert!(GROUPS >= 2 && GROUPS <= MAX_GROUPS);
     let mut vs = [[W::splat(0); 4]; MAX_GROUPS];
-    vs[..ngroups].copy_from_slice(&states[..ngroups]);
+    vs[..GROUPS].copy_from_slice(&states[..GROUPS]);
     macro_rules! st {
         ($step:literal) => {{
             // One K broadcast serves every independent group in this block.
             let kv = W::splat_ref(&K[$step]);
-            for g in 0..ngroups {
+            for g in 0..GROUPS {
                 wide_step_with_k::<W>(&mut vs[g], &ms[g], $step, kv);
             }
         }};
@@ -290,7 +289,7 @@ fn compress_groups_interleaved<W: Wide>(
     st!(61);
     st!(62);
     st!(63);
-    for g in 0..ngroups {
+    for g in 0..GROUPS {
         states[g][0] = W::add(vs[g][0], states[g][0]);
         states[g][1] = W::add(vs[g][1], states[g][1]);
         states[g][2] = W::add(vs[g][2], states[g][2]);
@@ -351,7 +350,12 @@ pub(crate) fn hash_equal_wide<W: Wide>(inputs: &[&[u8]], outputs: &mut [[u8; 16]
                 } else {
                     None
                 };
-                compress_groups_interleaved::<W>(&mut states, &cur, ngroups);
+                match ngroups {
+                    2 => compress_groups_interleaved::<W, 2>(&mut states, &cur),
+                    3 => compress_groups_interleaved::<W, 3>(&mut states, &cur),
+                    4 => compress_groups_interleaved::<W, 4>(&mut states, &cur),
+                    _ => unreachable!("group count exceeds MAX_GROUPS"),
+                }
                 match next {
                     Some(ms) => cur = ms,
                     None => break,

@@ -275,9 +275,10 @@ against the prior campaign. See
 [`2026-09-20-neon-multigroup-unrolled.json`](validation/2026-09-20-neon-multigroup-unrolled.json).
 
 A direct two-group workload, 16 independent 1 MiB messages, passed a fresh
-5-second ABBA at **2.404×** versus sequential `md-5` after inlining the
-statically expanded multi-group function (A drift 0.159%, B variation 0.354%).
-Evidence: [`2026-09-20-neon16-inline-abba.json`](validation/2026-09-20-neon16-inline-abba.json).
+5-second ABBA at **4.216×** versus sequential `md-5` after specializing the
+multi-group function for const 2/3/4 group counts while keeping it out of the
+caller (A drift 0.059%, B variation 0.400%). Evidence:
+[`2026-09-20-neon16-constgroups-abba.json`](validation/2026-09-20-neon16-constgroups-abba.json).
 
 ### Root-cause matrix: why SIMD can appear to have no advantage
 

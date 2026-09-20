@@ -13,10 +13,12 @@
 - Added mixed-length, tail-batch, grouped-scheduler, and Digest streaming
   benchmarks with same-host ABBA evidence.
 - Current Apple Silicon evidence shows about 3.10× for eight independent 1 MiB
-  messages and 2.40× for sixteen; single-message AArch64 remains near
+  messages and 4.22× for sixteen; single-message AArch64 remains near
   RustCrypto `md-5` parity and is not advertised as a large speedup.
 - Inlined the statically expanded AArch64 multi-group kernel; a fresh 16×1 MiB
   ABBA measured 2.40× versus sequential `md-5` with both stability gates passed.
+- Specialized the multi-group kernel for 2/3/4 groups without inlining the full
+  compressor into the caller; fresh 16×1 MiB ABBA reached 4.22×.
 
 ## 0.1.0 — 2026-09-20
 
