@@ -62,6 +62,17 @@ aarch64 `opt` (`single_aarch`, adapted from fast-md5), then portable Rust.
 The batch scheduler calls that backend for fallback messages. Feature `simd`
 does not enter this single-stream decision.
 
+`update_many_dispatch` is the incremental scheduler. It works on windows of at
+most `lanes × MAX_GROUPS` streams without allocating. Within a window it first
+completes every partial block on the single-stream backend, then repeatedly
+selects the streams that still hold a complete block and advances them over the
+block count they have in common through `platform::update_equal_n`, until fewer
+than four such streams remain; tails return to the single-stream backend.
+`wide::update_equal_wide` loads caller chaining values into vector lanes
+(`Wide::from_lanes`), runs `wide::compress_full_blocks` — the same full-block
+loop `hash_equal_wide` enters from the IV — and stores them back. It applies no
+padding and reads exactly `nblocks × 64` bytes per stream.
+
 `hash_many_dispatch` validates output capacity and groups adjacent equal-length
 inputs without allocation or reordering. The `std`-only `Md5Engine::hash_many_grouped`
 entry point is an explicit scheduler option: it sorts temporary indices by
@@ -100,8 +111,9 @@ write beyond its corresponding output slot.
 
 ## API limits
 
-`hash_many` is one-shot SIMD. `update_many` and `finalize_many` are scalar loops
-over `Md5State`; neither batches incremental compression. The experimental pair
+`hash_many` is one-shot SIMD and `update_many` is incremental SIMD; both enter the
+same full-block schedule. `finalize_many` is a sequential snapshot loop over
+`Md5State` and does not batch padding blocks. The experimental pair
 path stays disabled by default and does not replace the SIMD kernel.
 
 The native `zeroize` method is best-effort clearing, not a cryptographic secret

@@ -70,6 +70,13 @@ impl Wide for Neon8 {
     }
 
     #[inline(always)]
+    fn from_lanes(words: &[u32]) -> Self::V {
+        assert!(words.len() >= LANES);
+        // SAFETY: the assertion guarantees LANES readable words.
+        unsafe { Pair4(vld1q_u32(words.as_ptr()), vld1q_u32(words.as_ptr().add(4))) }
+    }
+
+    #[inline(always)]
     unsafe fn gather_block(ptrs: &[*const u8], n: usize) -> [Self::V; 16] {
         debug_assert!((1..=LANES).contains(&n));
         unsafe {
@@ -108,4 +115,11 @@ impl Wide for Neon8 {
 #[inline]
 pub fn hash_equal(inputs: &[&[u8]], outputs: &mut [[u8; 16]]) {
     super::wide::hash_equal_wide::<Neon8>(inputs, outputs);
+}
+
+/// Incremental counterpart of [`hash_equal`]: advance caller chaining values
+/// over `nblocks` complete blocks (groups of 8 when `n > 8`).
+#[inline]
+pub fn update_equal(chain: &mut [[u32; 4]], inputs: &[&[u8]], nblocks: usize) {
+    super::wide::update_equal_wide::<Neon8>(chain, inputs, nblocks);
 }

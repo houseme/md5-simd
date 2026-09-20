@@ -134,6 +134,13 @@ impl Wide for Neon4 {
     }
 
     #[inline(always)]
+    fn from_lanes(words: &[u32]) -> Self::V {
+        assert!(words.len() >= LANES);
+        // SAFETY: the assertion guarantees LANES readable words.
+        unsafe { vld1q_u32(words.as_ptr()) }
+    }
+
+    #[inline(always)]
     unsafe fn gather_block(ptrs: &[*const u8], n: usize) -> [Self::V; 16] {
         unsafe { gather_neon4(ptrs, n) }
     }
@@ -143,4 +150,11 @@ impl Wide for Neon4 {
 #[inline]
 pub fn hash_equal(inputs: &[&[u8]], outputs: &mut [[u8; 16]]) {
     super::wide::hash_equal_wide::<Neon4>(inputs, outputs);
+}
+
+/// Incremental counterpart of [`hash_equal`]: advance caller chaining values
+/// over `nblocks` complete blocks (groups of 4 when `n > 4`).
+#[inline]
+pub fn update_equal(chain: &mut [[u32; 4]], inputs: &[&[u8]], nblocks: usize) {
+    super::wide::update_equal_wide::<Neon4>(chain, inputs, nblocks);
 }

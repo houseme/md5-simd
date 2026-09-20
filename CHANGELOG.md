@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- `Md5Engine::update_many` now advances live streams through the SIMD kernels
+  instead of looping over them on the single-stream backend. Signature and
+  results are unchanged. Streams may be unequal, unaligned, or idle in a call;
+  fewer than four streams with a complete block, tails, and non-SIMD targets keep
+  the single-stream path.
+- Same-host ABBA against updating the same `Md5State`s one by one (64 KiB chunks,
+  1 MiB per stream): Apple Silicon NEON 3.11× (8 streams) and 4.10× (16);
+  Intel Core i7-9700 AVX2, against the x86_64 assembly backend, 2.92× (4),
+  5.64× (8) and 4.69× (16).
+- `hash_equal_wide` and the new `update_equal_wide` share one full-block loop.
+  ABBA of `hash_many_equal_16/1048576` before and after the extraction:
+  1.005× on Apple Silicon, 1.001× on i7-9700 (no change).
+
+### Validation
+
+- Added `tests/update_many.rs`: lockstep, near-equal, stalled/short, arbitrary
+  chunking, more streams than one scheduling window, and mixed single/batch
+  updates, all against RustCrypto `md-5`.
+- Added the `update_many_{4,8,16,32}x1mib` Criterion groups.
+
 ## 0.2.0 — 2026-09-20
 
 ### Performance follow-up

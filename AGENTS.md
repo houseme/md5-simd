@@ -16,8 +16,10 @@ passwords, signatures, or authenticity checks.
 1. `frame::build_final_blocks` is the only production padding builder.
 2. `consts` owns the RFC constants and message schedule.
 3. `backend::compress_block` selects the single-stream compressor.
-4. `simd::hash_many_dispatch` schedules batches; `wide::hash_equal_wide` is the
-   shared SIMD kernel. Keep ISA-specific operations in their adapters.
+4. `simd::hash_many_dispatch` schedules one-shot batches and
+   `simd::update_many_dispatch` schedules incremental ones; `wide::hash_equal_wide`
+   and `wide::update_equal_wide` share `wide::compress_full_blocks`, the only SIMD
+   full-block loop. Keep ISA-specific operations in their adapters.
 5. `Md5` supports independent clones; snapshot methods and `Md5State::finalize`
    preserve the stream. Digest 0.11 uses the same compressor and framing.
 6. Every backend must match RFC 1321 and the independent RustCrypto test oracle.

@@ -198,6 +198,62 @@ pub(crate) fn hash_equal_n(n: usize, inputs: &[&[u8]], outputs: &mut [[u8; 16]])
     }
 }
 
+/// Advance `n` chaining values over `nblocks` complete blocks on the kernel
+/// [`hash_equal_n`] would choose for `n` messages.
+///
+/// Returns `false` without touching `chain` when no SIMD kernel is usable; the
+/// caller then advances each stream on the single-stream backend.
+pub(crate) fn update_equal_n(chain: &mut [[u32; 4]], inputs: &[&[u8]], nblocks: usize) -> bool {
+    let n = chain.len();
+    debug_assert_eq!(inputs.len(), n);
+    if n == 0 || nblocks == 0 {
+        return true;
+    }
+
+    #[cfg(all(
+        feature = "simd",
+        target_endian = "little",
+        target_arch = "aarch64",
+        not(feature = "force-portable")
+    ))]
+    {
+        if n >= 5 {
+            neon8::update_equal(chain, inputs, nblocks);
+        } else {
+            neon::update_equal(chain, inputs, nblocks);
+        }
+        return true;
+    }
+
+    #[cfg(all(
+        feature = "simd",
+        target_endian = "little",
+        target_arch = "x86_64",
+        not(feature = "force-portable")
+    ))]
+    {
+        if n <= 8 && x86_has_avx2() {
+            // SAFETY: AVX2 probed.
+            unsafe { avx2::update_equal(chain, inputs, nblocks) };
+        } else if x86_has_avx512() {
+            // SAFETY: AVX-512F + AVX2 probed on this path.
+            unsafe { avx512::update_equal(chain, inputs, nblocks) };
+        } else if x86_has_avx2() {
+            // SAFETY: AVX2 probed.
+            unsafe { avx2::update_equal(chain, inputs, nblocks) };
+        } else {
+            return false;
+        }
+        return true;
+    }
+
+    #[allow(unreachable_code)]
+    {
+        let _ = (chain, inputs, nblocks);
+        false
+    }
+}
+
 #[inline]
 fn sequential(n: usize, inputs: &[&[u8]], outputs: &mut [[u8; 16]]) {
     for i in 0..n {

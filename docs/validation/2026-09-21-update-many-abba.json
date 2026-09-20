@@ -1,0 +1,112 @@
+{
+  "date": "2026-09-21",
+  "scope": "incremental SIMD Md5Engine::update_many; shared full-block loop extraction",
+  "method": {
+    "order": "A1,B1,B2,A2",
+    "rounds_per_cell": 3,
+    "samples_per_round": 20,
+    "measurement_seconds": 3,
+    "warmup_seconds": 1,
+    "cooldown_seconds": 2,
+    "drift_limit": 0.03
+  },
+  "runs": [
+    {
+      "target": "aarch64-apple-darwin",
+      "host": "Apple Silicon",
+      "workload": "update_many_16x1mib/65536",
+      "baseline": "sequential Md5State::update (single-aarch)",
+      "candidate": "update_many (NEON8)",
+      "cells_ns": {
+        "A1": 17104380.3697479,
+        "B1": 4176971.086309524,
+        "B2": 4183728.471212121,
+        "A2": 17134183.5
+      },
+      "baseline_drift": 0.0017424267706775964,
+      "candidate_variation": 0.0016177715294092287,
+      "accepted_stability": true,
+      "baseline_over_candidate": 4.095179312949407
+    },
+    {
+      "target": "aarch64-apple-darwin",
+      "host": "Apple Silicon",
+      "workload": "update_many_8x1mib/65536",
+      "baseline": "sequential Md5State::update (single-aarch)",
+      "candidate": "update_many (NEON8)",
+      "cells_ns": {
+        "A1": 8522614.708333332,
+        "B1": 2740589.5996031743,
+        "B2": 2756233.1403133906,
+        "A2": 8549004.223557692
+      },
+      "baseline_drift": 0.003096410682341011,
+      "candidate_variation": 0.0057080931462636375,
+      "accepted_stability": true,
+      "baseline_over_candidate": 3.105724841356291
+    },
+    {
+      "target": "aarch64-apple-darwin",
+      "host": "Apple Silicon",
+      "workload": "hash_many_equal_16/1048576",
+      "baseline": "commit 39a0419 binary",
+      "candidate": "this change, same benchmark id",
+      "cells_ns": {
+        "A1": 4115749.423611111,
+        "B1": 4109376.2518939395,
+        "B2": 4082436.94375,
+        "A2": 4114572.875
+      },
+      "baseline_drift": 0.0002858649762207399,
+      "candidate_variation": 0.00655557108734528,
+      "accepted_stability": true,
+      "baseline_over_candidate": 1.004700925429751
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "host": "Intel Core i7-9700 (AVX2), pinned to one core",
+      "workload": "update_many_16x1mib/65536",
+      "baseline": "sequential Md5State::update (single-asm)",
+      "candidate": "update_many (AVX2)",
+      "baseline_drift": 0.0002963417344526986,
+      "candidate_variation": 0.0017931469243166465,
+      "accepted_stability": true,
+      "baseline_over_candidate": 4.693719407655499
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "host": "Intel Core i7-9700 (AVX2), pinned to one core",
+      "workload": "update_many_8x1mib/65536",
+      "baseline": "sequential Md5State::update (single-asm)",
+      "candidate": "update_many (AVX2)",
+      "baseline_drift": 3.272664283759941e-05,
+      "candidate_variation": 0.0005517572173506791,
+      "accepted_stability": true,
+      "baseline_over_candidate": 5.643873202454738
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "host": "Intel Core i7-9700 (AVX2), pinned to one core",
+      "workload": "update_many_4x1mib/65536",
+      "baseline": "sequential Md5State::update (single-asm)",
+      "candidate": "update_many (AVX2)",
+      "baseline_drift": 6.600935886491577e-05,
+      "candidate_variation": 0.00011818954742137677,
+      "accepted_stability": true,
+      "baseline_over_candidate": 2.922059233167556
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "host": "Intel Core i7-9700 (AVX2), pinned to one core",
+      "workload": "hash_many_equal_16/1048576",
+      "baseline": "commit 39a0419 binary",
+      "candidate": "this change, same benchmark id",
+      "baseline_drift": 0.0003147447057150199,
+      "candidate_variation": 0.002918333231745285,
+      "accepted_stability": true,
+      "baseline_over_candidate": 1.0006663115712213
+    }
+  ],
+  "not_covered": "AVX-512: compiled (x86_64 cross-check) but not executed on AVX-512 hardware for this change.",
+  "conclusion": "Accepted. update_many gains 2.9-5.6x over per-stream updates once four or more streams hold complete blocks; the one-shot hash_many path is unchanged."
+}

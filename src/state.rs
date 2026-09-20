@@ -45,6 +45,12 @@ impl Md5State {
         self.raw.reset();
     }
 
+    /// Shared state machine, for the incremental batch scheduler.
+    #[inline]
+    pub(crate) fn raw_mut(&mut self) -> &mut Raw {
+        &mut self.raw
+    }
+
     /// Bytes absorbed so far.
     #[inline]
     pub const fn bytes_hashed(&self) -> u64 {

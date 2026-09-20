@@ -143,9 +143,32 @@ process up to four vector groups per kernel call. `runtime_lanes()` and
 or fall back. SIMD accelerates independent messages, not one message's sequential
 MD5 chain.
 
-`Md5State` is a copyable incremental state. `Md5Engine::update_many` and
-`finalize_many` loop over independent scalar states; they are **not** incremental
-SIMD APIs. `Md5State::finalize()` is a non-consuming snapshot.
+`Md5State` is a copyable incremental state, and `Md5Engine::update_many` is the
+incremental counterpart of `hash_many`: it advances live streams whose messages
+are not complete yet, which is the shape of a streaming upload.
+
+```rust
+use md5_simd::{Md5Engine, Md5State, digest};
+
+let uploads = [[0x5a; 4096]; 8];
+let engine = Md5Engine::new();
+let mut states = [Md5State::new(); 8];
+for round in 0..4 {
+    // One 1 KiB chunk per live stream; chaining values survive between calls.
+    let chunks: Vec<&[u8]> = uploads.iter().map(|u| &u[round * 1024..(round + 1) * 1024]).collect();
+    engine.update_many(&mut states, &chunks);
+}
+assert!(states.iter().all(|s| s.finalize() == digest(&uploads[0])));
+```
+
+With `simd`, streams that hold complete blocks share SIMD registers. Streams need
+not be equally long, block-aligned, or all supplied with data in a call: each is
+first brought to a block boundary, then every stream that still has a complete
+block advances over the block count they have in common, and a stream that runs
+out leaves the batch. Fewer than four such streams, tails, and targets without a
+SIMD kernel use the active single-stream backend, so no shape is slower than
+updating the states one by one. `finalize_many` remains a sequential snapshot
+loop; `Md5State::finalize()` is a non-consuming snapshot.
 
 ### Measured AArch64 batch results
 

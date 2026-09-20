@@ -160,6 +160,13 @@ impl Wide for Avx2 {
     }
 
     #[inline(always)]
+    fn from_lanes(words: &[u32]) -> Self::V {
+        assert!(words.len() >= LANES);
+        // SAFETY: the assertion guarantees LANES readable words; the load is unaligned.
+        unsafe { _mm256_loadu_si256(words.as_ptr().cast::<__m256i>()) }
+    }
+
+    #[inline(always)]
     unsafe fn gather_block(ptrs: &[*const u8], n: usize) -> [Self::V; 16] {
         unsafe { gather_avx2(ptrs, n) }
     }
@@ -173,4 +180,15 @@ impl Wide for Avx2 {
 #[inline]
 pub unsafe fn hash_equal(inputs: &[&[u8]], outputs: &mut [[u8; 16]]) {
     super::wide::hash_equal_wide::<Avx2>(inputs, outputs);
+}
+
+/// Incremental counterpart of [`hash_equal`]: advance caller chaining values
+/// over `nblocks` complete blocks (any `n`, groups of 8).
+///
+/// # Safety
+/// CPU must support AVX2.
+#[target_feature(enable = "avx2")]
+#[inline]
+pub unsafe fn update_equal(chain: &mut [[u32; 4]], inputs: &[&[u8]], nblocks: usize) {
+    super::wide::update_equal_wide::<Avx2>(chain, inputs, nblocks);
 }
