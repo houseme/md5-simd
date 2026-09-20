@@ -4,6 +4,9 @@ use md5_simd::{
     Md5Engine, Md5State, digest, hex_encode, md5_many, pair_path_active, simd_active, simd_name,
 };
 
+mod common;
+use common::run_with_large_stack;
+
 fn ref_hex(data: &[u8]) -> String {
     use md5::Digest;
     hex_encode(md5::Md5::digest(data).as_slice())
@@ -17,6 +20,10 @@ fn pattern(len: usize, salt: u8) -> Vec<u8> {
 
 #[test]
 fn hash_many_equal_pairs_match_reference() {
+    run_with_large_stack(hash_many_equal_pairs_match_reference_body);
+}
+
+fn hash_many_equal_pairs_match_reference_body() {
     let engine = Md5Engine::new();
     for len in [64usize, 128, 256, 1024, 4096, 64 * 30] {
         for count in [2usize, 3, 4, 5, 8, 16] {
@@ -51,6 +58,10 @@ fn hash_many_mixed_lengths_match_reference() {
 
 #[test]
 fn pair_path_public_api() {
+    run_with_large_stack(pair_path_public_api_body);
+}
+
+fn pair_path_public_api_body() {
     let engine = Md5Engine::new();
     let lanes = engine.lanes();
     // 1=off, 2=scalar pair, 4/8/16=NEON / AVX2 / AVX-512

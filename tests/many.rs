@@ -2,14 +2,8 @@
 
 use md5_simd::{Md5Engine, Md5State, digest, hex_encode};
 
-fn run_with_large_stack(test: fn()) {
-    std::thread::Builder::new()
-        .stack_size(8 * 1024 * 1024)
-        .spawn(test)
-        .expect("spawn large-stack SIMD test")
-        .join()
-        .expect("large-stack SIMD test");
-}
+mod common;
+use common::run_with_large_stack;
 
 #[test]
 fn hash_many_matches_single() {
