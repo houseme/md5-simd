@@ -45,7 +45,7 @@ impl Raw {
     }
 
     /// Absorb bytes through the active block kernel.
-    #[inline]
+    #[inline(always)]
     pub fn update<F>(&mut self, mut data: &[u8], mut compress: F)
     where
         F: FnMut(&mut [u32; 4], &[u8; 64]),
@@ -76,6 +76,63 @@ impl Raw {
         if !data.is_empty() {
             self.buf[..data.len()].copy_from_slice(data);
             self.buf_len = data.len() as u32;
+        }
+    }
+
+    /// Absorb bytes using the vendored `opt` single-stream kernel when built.
+    ///
+    /// Same semantics as [`Self::update`]; the multi-block loop calls
+    /// `single_stream::transform` directly (no `FnMut` boundary).
+    #[inline(always)]
+    pub fn update_opt(&mut self, data: &[u8]) {
+        #[cfg(all(
+            feature = "opt",
+            not(feature = "force-portable"),
+            any(
+                target_arch = "x86_64",
+                all(target_arch = "aarch64", target_endian = "little")
+            )
+        ))]
+        {
+            let mut data = data;
+            self.count = self.count.wrapping_add(data.len() as u64);
+            if self.buf_len > 0 {
+                let have = self.buf_len as usize;
+                let take = (64 - have).min(data.len());
+                self.buf[have..have + take].copy_from_slice(&data[..take]);
+                self.buf_len = (have + take) as u32;
+                data = &data[take..];
+                if self.buf_len == 64 {
+                    let block = self.buf;
+                    crate::simd::single_stream::transform(&mut self.state, &block);
+                    self.buf_len = 0;
+                } else {
+                    return;
+                }
+            }
+            if data.len() >= 64 {
+                let full = data.len() & !63;
+                let (chunks, _) = data[..full].as_chunks::<64>();
+                for block in chunks {
+                    crate::simd::single_stream::transform(&mut self.state, block);
+                }
+                data = &data[full..];
+            }
+            if !data.is_empty() {
+                self.buf[..data.len()].copy_from_slice(data);
+                self.buf_len = data.len() as u32;
+            }
+        }
+        #[cfg(not(all(
+            feature = "opt",
+            not(feature = "force-portable"),
+            any(
+                target_arch = "x86_64",
+                all(target_arch = "aarch64", target_endian = "little")
+            )
+        )))]
+        {
+            self.update(data, crate::backend::compress_block);
         }
     }
 

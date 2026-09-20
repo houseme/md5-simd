@@ -29,12 +29,32 @@ fn backend_name_matches_cfg() {
         return;
     }
     assert!(!is_portable_only());
-    let expect_asm = cfg!(feature = "opt");
-    let is_asm = name.contains("single-asm");
-    let expect_asm = expect_asm && cfg!(target_arch = "x86_64");
-    assert_eq!(is_asm, expect_asm, "backend name={name}");
-    if !expect_asm {
-        assert!(name.contains("in-tree"), "got {name}");
+    #[cfg(all(feature = "opt", target_arch = "x86_64"))]
+    {
+        assert!(
+            name.contains("single-asm"),
+            "opt x86_64 should select single-asm, got {name}"
+        );
+    }
+    #[cfg(all(feature = "opt", target_arch = "aarch64", target_endian = "little"))]
+    {
+        assert!(
+            name.contains("single-aarch"),
+            "opt aarch64 should select single-aarch, got {name}"
+        );
+    }
+    #[cfg(not(all(
+        feature = "opt",
+        any(
+            target_arch = "x86_64",
+            all(target_arch = "aarch64", target_endian = "little")
+        )
+    )))]
+    {
+        assert!(
+            name.contains("in-tree") || name.contains("portable"),
+            "got {name}"
+        );
     }
 }
 
@@ -50,6 +70,23 @@ fn opt_profile_reports_single_asm_backend() {
     assert!(
         name.contains("single-asm"),
         "opt profile should select vendored single-asm, got {name}"
+    );
+    assert!(!is_portable_only());
+    eprintln!("opt backend={name} simd={}", md5_simd::simd_name());
+}
+
+#[cfg(all(
+    feature = "opt",
+    not(feature = "force-portable"),
+    target_arch = "aarch64",
+    target_endian = "little"
+))]
+#[test]
+fn opt_profile_reports_single_aarch_backend() {
+    let name = backend_name();
+    assert!(
+        name.contains("single-aarch"),
+        "opt profile should select vendored single-aarch, got {name}"
     );
     assert!(!is_portable_only());
     eprintln!("opt backend={name} simd={}", md5_simd::simd_name());

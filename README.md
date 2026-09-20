@@ -147,7 +147,7 @@ SIMD APIs. `Md5State::finalize()` is a non-consuming snapshot.
 | Feature | Default | Effect |
 | --- | :---: | --- |
 | `std` | Yes | I/O helpers, native snapshot hex, batch hex, x86 runtime detection |
-| `opt` | Yes | x86_64 scalar assembly; portable Rust on other architectures |
+| `opt` | Yes | x86_64 single-stream assembly; little-endian aarch64 `single-aarch` kernel |
 | `digest` | Yes | Optional RustCrypto Digest 0.11 dependency |
 | `simd` | Yes | SIMD batches; single-stream dispatch is unchanged |
 | `force-portable` | No | Overrides the selected single-stream and batch acceleration |

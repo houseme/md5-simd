@@ -57,20 +57,23 @@ independent test oracle. An internal oracle alone would not detect a corrupted
 shared constant.
 
 `backend::compress_block` is the only production single-stream selector:
-`force-portable` wins, followed by x86_64 `opt`, then portable Rust. The batch
-scheduler calls that backend for fallback messages. Feature `simd` does not enter
-this single-stream decision.
+`force-portable` wins, followed by x86_64 `opt` assembly, then little-endian
+aarch64 `opt` (`single_aarch`, adapted from fast-md5), then portable Rust.
+The batch scheduler calls that backend for fallback messages. Feature `simd`
+does not enter this single-stream decision.
 
 `hash_many_dispatch` validates output capacity and groups adjacent equal-length
 inputs without allocation or reordering. `platform` chooses an available ISA.
 The same generic wide kernel is inlined into the x86 `target_feature` entries;
 removing that inlining can change AVX code generation significantly.
 
-A wide call handles at most four SIMD groups. It gathers all active groups for a
-block index and then compresses each group. This source structure is **not**
-proof of dual/triple instruction-level interleaving: the 64-step dependency
-chains are executed per group. More aggressive interleaving remains a measured
-optimization opportunity, not a claimed implemented property.
+A wide call handles at most four SIMD groups. Full blocks gather active groups
+then compress them. On little-endian aarch64, runs with **3+ groups** advance
+the 64-step chains with instruction-level step interleaving and pipeline the
+next block's gather behind the current compress. x86 keeps compresses inside
+`#[target_feature]` entries and uses sequential per-group compress (measured
+faster than an out-of-line interleaved helper). Single- and two-group shapes
+use the tight gather→compress loop on all SIMD targets.
 
 NEON8 uses two four-lane vectors and shares its transpose and rotate operations
 with NEON4. AVX-512 gather uses AVX2 transposes plus AVX-512F inserts. Unused lanes

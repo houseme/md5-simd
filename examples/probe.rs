@@ -13,12 +13,22 @@ fn main() {
         engine.simd_name()
     );
     for (count, len) in [
-        (8usize, 64usize),
+        (4usize, 16usize),
+        (4, 32),
+        (4, 64),
+        (4, 1024),
+        (8, 16),
+        (8, 32),
+        (8, 64),
+        (8, 256),
         (8, 1024),
         (16, 1024),
-        (16, 65536),
+        (24, 1024),
         (32, 1024),
-        (4, 1024),
+        (48, 1024),
+        (64, 1024),
+        (16, 65536),
+        (32, 4096),
     ] {
         let storage: Vec<Vec<u8>> = (0..count)
             .map(|l| (0..len).map(|i| (i as u8).wrapping_add(l as u8)).collect())

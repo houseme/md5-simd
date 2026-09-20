@@ -18,7 +18,7 @@ cooldown=${ABBA_COOLDOWN_SECS:-2}
 drift_limit=${ABBA_DRIFT_LIMIT:-0.03}
 artifact_dir=${ABBA_ARTIFACT_DIR:-"$crate_dir/abba-$(date -u +%Y%m%dT%H%M%SZ)"}
 baseline_filter=${ABBA_BASELINE_FILTER:-'^oneshot/md-5/1048576$'}
-candidate_filter=${ABBA_CANDIDATE_FILTER:-'^oneshot/md5-simd\[(single-asm\(x86_64\)|in-tree\(aarch64\)|in-tree\(x86_64\)|in-tree)\]/1048576$'}
+candidate_filter=${ABBA_CANDIDATE_FILTER:-'^oneshot/md5-simd\[(single-asm\(x86_64\)|single-aarch\(aarch64\)|in-tree\(aarch64\)|in-tree\(x86_64\)|in-tree)\]/1048576$'}
 
 # Validate numeric gates before building or collecting any measurements.
 python3 - "$rounds" "$samples" "$measurement" "$warmup" "$cooldown" "$drift_limit" <<'PYCFG'

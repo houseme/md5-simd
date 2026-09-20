@@ -4,8 +4,6 @@ use crate::backend;
 use crate::core::Raw;
 use alloc::string::String;
 
-const HEX: &[u8; 16] = b"0123456789abcdef";
-
 /// Streaming MD5 hasher.
 ///
 /// `Clone` supports independent snapshots (`clone().finalize()`); prefer
@@ -42,9 +40,9 @@ impl Md5 {
     }
 
     /// Absorb additional bytes.
-    #[inline]
+    #[inline(always)]
     pub fn update(&mut self, data: &[u8]) {
-        self.raw.update(data, backend::compress_block);
+        self.raw.update_opt(data);
     }
 
     /// Builder-style update.
@@ -121,7 +119,7 @@ impl Drop for Md5 {
 }
 
 /// One-shot hashing (active backend).
-#[inline]
+#[inline(always)]
 pub fn digest(data: &[u8]) -> [u8; 16] {
     backend::hash(data)
 }
@@ -156,18 +154,31 @@ pub fn hex_encode_digest(digest: &[u8; 16]) -> [u8; 32] {
     out
 }
 
+/// Two-byte lowercase hex lookup for every input byte.
+const HEX_PAIRS: [[u8; 2]; 256] = {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut table = [[0u8; 2]; 256];
+    let mut i = 0;
+    while i < 256 {
+        table[i] = [HEX[i >> 4], HEX[i & 0x0f]];
+        i += 1;
+    }
+    table
+};
+
 /// Write lowercase hex into `out`; returns bytes written (`2 * bytes.len()`).
 ///
 /// `out.len()` must be at least `2 * bytes.len()`.
 ///
 /// # Panics
 /// Panics before writing if the output is too short.
-#[inline]
+#[inline(always)]
 pub fn hex_encode_into(bytes: &[u8], out: &mut [u8]) -> usize {
     assert!(bytes.len() <= out.len() / 2, "hex output is too short");
     for (i, b) in bytes.iter().enumerate() {
-        out[i * 2] = HEX[(b >> 4) as usize];
-        out[i * 2 + 1] = HEX[(b & 0x0f) as usize];
+        let pair = HEX_PAIRS[*b as usize];
+        out[i * 2] = pair[0];
+        out[i * 2 + 1] = pair[1];
     }
     bytes.len() * 2
 }

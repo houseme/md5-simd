@@ -6,9 +6,9 @@
 //! hash_equal_wide fused equal-length groups (n may exceed LANES)
 //! ```
 //!
-//! Fused groups: each block index loads **all** SIMD groups first, then
-//! compresses each group. Groups share framing and scheduling; this does not
-//! guarantee instruction-level interleaving across their 64-step chains.
+//! Fused groups: each block index gathers active groups, then compresses them.
+//! aarch64 NEON with 3+ groups interleaves 64-step chains and pipelines the
+//! next gather; x86 keeps compress inside `#[target_feature]` (sequential).
 //!
 //! Compiled only alongside the enabled ISA adapters.
 
@@ -45,6 +45,9 @@ pub(crate) trait Wide {
 }
 
 /// One MD5 step; `step` is a literal at each unrolled call site.
+///
+/// G uses the disjoint-mask add identity `(x&z)+(y&!z)` shared with the
+/// scalar production kernel (see `compress::mix_g`).
 #[inline(always)]
 fn wide_step<W: Wide>(v: &mut [W::V; 4], m: &[W::V; 16], step: usize) {
     let dest = DEST[step & 3];
@@ -166,6 +169,71 @@ fn store_digests<W: Wide>(state: &[W::V; 4], lo: usize, n: usize, outputs: &mut 
     }
 }
 
+/// Gather one 64-byte block index for every active SIMD group.
+///
+/// Must stay `#[inline(always)]` on x86 so gathers run inside
+/// `#[target_feature]` entries. Debug stack growth is handled by widening
+/// test thread stacks.
+///
+/// # Safety
+/// For each group, every active lane pointer at `start` has 64 readable bytes.
+#[inline(always)]
+unsafe fn gather_groups_at<W: Wide>(
+    inputs: &[&[u8]],
+    start: usize,
+    n: usize,
+    lanes: usize,
+    ngroups: usize,
+) -> [[W::V; 16]; MAX_GROUPS] {
+    let mut ms = [[W::splat(0); 16]; MAX_GROUPS];
+    for g in 0..ngroups {
+        let lo = g * lanes;
+        let hi = (lo + lanes).min(n);
+        let mut ptrs = [core::ptr::null(); MAX_LANES];
+        for (i, lane) in (lo..hi).enumerate() {
+            // SAFETY: start identifies a complete 64-byte input block.
+            ptrs[i] = unsafe { inputs[lane].as_ptr().add(start) };
+        }
+        // SAFETY: every active pointer has 64 readable bytes; 1 <= hi-lo <= lanes.
+        ms[g] = unsafe { W::gather_block(&ptrs, hi - lo) };
+    }
+    ms
+}
+
+/// Compress multi-group blocks with instruction-level step interleaving.
+///
+/// Independent 64-step chains are advanced together so rotate/add latency on
+/// one group is covered by other groups' vector ops.
+#[inline(never)]
+fn compress_groups_interleaved<W: Wide>(
+    states: &mut [[W::V; 4]; MAX_GROUPS],
+    ms: &[[W::V; 16]; MAX_GROUPS],
+    ngroups: usize,
+) {
+    debug_assert!(ngroups >= 2);
+    let mut vs = [[W::splat(0); 4]; MAX_GROUPS];
+    vs[..ngroups].copy_from_slice(&states[..ngroups]);
+    for step in 0..64 {
+        for g in 0..ngroups {
+            wide_step::<W>(&mut vs[g], &ms[g], step);
+        }
+    }
+    for g in 0..ngroups {
+        states[g][0] = W::add(vs[g][0], states[g][0]);
+        states[g][1] = W::add(vs[g][1], states[g][1]);
+        states[g][2] = W::add(vs[g][2], states[g][2]);
+        states[g][3] = W::add(vs[g][3], states[g][3]);
+    }
+}
+
+/// Whether multi-group full blocks should interleave 64-step chains.
+///
+/// Measured: NEON8 benefits at `ngroups >= 3`; x86 AVX must keep every
+/// compress inside `#[target_feature]` entries, so it stays sequential.
+const fn prefer_group_interleave() -> bool {
+    cfg!(all(target_arch = "aarch64", target_endian = "little"))
+}
+
 /// Fused equal-length multi-buffer hash (`n` may exceed `W::LANES`).
 ///
 /// `#[inline(always)]` is load-bearing on x86: `#[target_feature]` entries must
@@ -185,22 +253,47 @@ pub(crate) fn hash_equal_wide<W: Wide>(inputs: &[&[u8]], outputs: &mut [[u8; 16]
     let nfull = len / 64;
     let mut states = [iv_state::<W>(); MAX_GROUPS];
 
-    for bi in 0..nfull {
-        let start = bi * 64;
-        let mut ms = [[W::splat(0); 16]; MAX_GROUPS];
-        for g in 0..ngroups {
-            let lo = g * lanes;
-            let hi = (lo + lanes).min(n);
-            let mut ptrs = [core::ptr::null(); MAX_LANES];
-            for (i, lane) in (lo..hi).enumerate() {
-                // SAFETY: start identifies a complete 64-byte input block.
-                ptrs[i] = unsafe { inputs[lane].as_ptr().add(start) };
+    if nfull > 0 {
+        if ngroups == 1 {
+            // Single-group tight loop.
+            for bi in 0..nfull {
+                let start = bi * 64;
+                let mut ptrs = [core::ptr::null(); MAX_LANES];
+                for (i, lane) in (0..n).enumerate() {
+                    // SAFETY: start identifies a complete 64-byte input block.
+                    ptrs[i] = unsafe { inputs[lane].as_ptr().add(start) };
+                }
+                // SAFETY: every pointer has 64 readable bytes.
+                let m = unsafe { W::gather_block(&ptrs, n) };
+                compress_wide::<W>(&mut states[0], &m);
             }
-            // SAFETY: every active pointer has 64 readable bytes; 1 <= hi-lo <= lanes.
-            ms[g] = unsafe { W::gather_block(&ptrs, hi - lo) };
-        }
-        for g in 0..ngroups {
-            compress_wide::<W>(&mut states[g], &ms[g]);
+        } else if prefer_group_interleave() && ngroups >= 3 {
+            // aarch64 NEON only: interleave chains + pipeline next gather.
+            // SAFETY: block 0 is a complete 64-byte block in every lane.
+            let mut cur = unsafe { gather_groups_at::<W>(inputs, 0, n, lanes, ngroups) };
+            for bi in 0..nfull {
+                let next = if bi + 1 < nfull {
+                    // SAFETY: start identifies a complete 64-byte input block.
+                    Some(unsafe { gather_groups_at::<W>(inputs, (bi + 1) * 64, n, lanes, ngroups) })
+                } else {
+                    None
+                };
+                compress_groups_interleaved::<W>(&mut states, &cur, ngroups);
+                match next {
+                    Some(ms) => cur = ms,
+                    None => break,
+                }
+            }
+        } else {
+            // Sequential per-group compress (all x86; also NEON ngroups<=2).
+            for bi in 0..nfull {
+                let start = bi * 64;
+                // SAFETY: start identifies a complete 64-byte input block.
+                let ms = unsafe { gather_groups_at::<W>(inputs, start, n, lanes, ngroups) };
+                for g in 0..ngroups {
+                    compress_wide::<W>(&mut states[g], &ms[g]);
+                }
+            }
         }
     }
 

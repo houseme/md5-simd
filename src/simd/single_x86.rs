@@ -6,11 +6,24 @@ use super::single_stream::{BLOCK_SIZE, STATE_WORDS};
 
 use crate::consts::K;
 
-#[allow(unused_assignments)] // t1 is written by the F-round asm block and read by G+H+I
-#[allow(clippy::too_many_lines)] // intentionally monolithic for the assembler
-#[allow(clippy::many_single_char_names)] // a/b/c/d/m are standard MD5 register names
-#[allow(clippy::cast_ptr_alignment)] // read_unaligned semantics via asm memory operands
-#[allow(clippy::cast_possible_wrap)] // K constants are bit-patterns; sign is irrelevant
+/// Monolithic x86_64 asm schedule.
+///
+/// - `inline_always`: required so `#[target]` callers and update loops keep
+///   the asm body hot; do not demote without an ABBA re-measure.
+/// - `unused_assignments`: the F-round asm block writes `t1`, which G/H/I
+///   blocks read later; rustc cannot see the cross-block asm dataflow.
+/// - `too_many_lines` / `many_single_char_names`: one assembler body keeps the
+///   audited instruction schedule contiguous; `a`/`b`/`c`/`d`/`m` are RFC names.
+/// - `cast_ptr_alignment` / `cast_possible_wrap`: `m` is an unaligned block
+///   pointer used in asm memory operands; `K` values are bit-pattern immediates.
+#[allow(
+    clippy::inline_always,
+    unused_assignments,
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_ptr_alignment,
+    clippy::cast_possible_wrap
+)]
 #[inline(always)]
 pub(crate) fn transform(state: &mut [u32; STATE_WORDS], block: &[u8; BLOCK_SIZE]) {
     // SAFETY: all pointer arithmetic stays within the 64-byte block and the

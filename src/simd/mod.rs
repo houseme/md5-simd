@@ -1,15 +1,16 @@
-//! Single-stream assembly and multi-message SIMD dispatch.
+//! Single-stream assembly / aarch64 opt core and multi-message SIMD dispatch.
 //!
 //! ```text
-//! single_stream.rs + single_x86.rs   single-stream asm (feature `opt`)
+//! single_stream.rs + single_x86.rs / single_aarch.rs   single-stream opt
 //! wide.rs                            fused multi-buffer kernel
 //! neon / neon8 / avx2 / avx512       batch ISA adapters
 //! platform.rs                        CPUID + equal-length dispatch
 //! mod.rs                             hash_many scheduler
 //! ```
 //!
-//! Single-stream uses `opt` on x86_64; `hash_many`
-//! equal-length runs use fused SIMD groups (see `docs/performance.md`).
+//! Single-stream uses `opt` on x86_64 (asm) and little-endian aarch64
+//! (fast-md5-adapted kernel); `hash_many` equal-length runs use fused SIMD
+//! groups (see `docs/performance.md`).
 
 use crate::backend;
 use crate::multibuf;
@@ -24,7 +25,7 @@ mod platform;
 ))]
 mod wide;
 
-/// Vendored single-stream asm body (feature `opt`).
+/// Vendored single-stream asm body (feature `opt`, x86_64).
 #[cfg(all(
     feature = "opt",
     target_arch = "x86_64",
@@ -32,10 +33,22 @@ mod wide;
 ))]
 mod single_x86;
 
+/// Vendored single-stream aarch64 body (feature `opt`).
+#[cfg(all(
+    feature = "opt",
+    target_arch = "aarch64",
+    target_endian = "little",
+    not(feature = "force-portable")
+))]
+mod single_aarch;
+
 /// Vendored single-stream entry (`transform`).
 #[cfg(all(
     feature = "opt",
-    target_arch = "x86_64",
+    any(
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_endian = "little")
+    ),
     not(feature = "force-portable")
 ))]
 pub mod single_stream;
@@ -142,9 +155,16 @@ pub fn hash_many_dispatch(inputs: &[&[u8]], outputs: &mut [[u8; 16]]) {
 /// Equal-run size handed to one fused `hash_equal_n` call.
 ///
 /// `0` → sequential `backend::hash` (inherits `opt`).
+///
+/// Measured crossovers (aarch64 NEON + x86 AVX probe):
+/// - `msg_len < 32`: gather never amortizes
+/// - `n = 4..7` and `msg_len < 64`: SIMD loses on aarch64 NEON8
 #[inline]
 fn pick_batch(left: usize, max: usize, msg_len: usize) -> usize {
     if left < 4 || max < 4 || msg_len < 32 {
+        return 0;
+    }
+    if left < 8 && msg_len < 64 {
         return 0;
     }
     left.min(max * MAX_GROUPS)
@@ -169,7 +189,10 @@ mod tests {
     fn pick_batch_policy() {
         assert_eq!(pick_batch(3, 8, 1024), 0);
         assert_eq!(pick_batch(8, 8, 16), 0);
+        assert_eq!(pick_batch(4, 8, 32), 0); // small n × short msg: scalar
+        assert_eq!(pick_batch(4, 8, 63), 0);
         assert_eq!(pick_batch(4, 8, 64), 4);
+        assert_eq!(pick_batch(8, 8, 32), 8); // larger n may use 32-byte SIMD
         assert_eq!(pick_batch(8, 8, 4096), 8);
         assert_eq!(pick_batch(9, 8, 1024), 9);
         assert_eq!(pick_batch(32, 8, 1024), 32);
@@ -181,27 +204,6 @@ mod tests {
             assert_eq!(pick_batch(80, 16, 1024), 64); // 16 * MAX_GROUPS
         }
         assert_eq!(pick_batch(8, 1, 1024), 0);
-    }
-
-    #[test]
-    fn simd_hash_many_matches_backend() {
-        for count in [1usize, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 24, 32] {
-            for len in [0usize, 1, 55, 64, 65, 256, 1024] {
-                let storage: Vec<Vec<u8>> = (0..count)
-                    .map(|lane| {
-                        (0..len)
-                            .map(|i| (i as u8).wrapping_add((lane as u8).wrapping_mul(17)))
-                            .collect()
-                    })
-                    .collect();
-                let inputs: Vec<&[u8]> = storage.iter().map(|v| v.as_slice()).collect();
-                let mut outputs = vec![[0u8; 16]; count];
-                hash_many_dispatch(&inputs, &mut outputs);
-                for (msg, out) in storage.iter().zip(outputs.iter()) {
-                    assert_eq!(*out, backend::hash(msg), "count={count} len={len}");
-                }
-            }
-        }
     }
 
     #[test]
@@ -222,9 +224,55 @@ mod tests {
         }
     }
 
+    #[test]
+    fn simd_hash_many_matches_backend() {
+        #[cfg(feature = "std")]
+        let handle = std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(simd_hash_many_matches_backend_body)
+            .expect("spawn test thread");
+        #[cfg(feature = "std")]
+        handle.join().expect("test thread");
+        #[cfg(not(feature = "std"))]
+        simd_hash_many_matches_backend_body();
+    }
+
+    fn simd_hash_many_matches_backend_body() {
+        for count in [1usize, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 24, 32] {
+            for len in [0usize, 1, 55, 64, 65, 256, 1024] {
+                let storage: Vec<Vec<u8>> = (0..count)
+                    .map(|lane| {
+                        (0..len)
+                            .map(|i| (i as u8).wrapping_add((lane as u8).wrapping_mul(17)))
+                            .collect()
+                    })
+                    .collect();
+                let inputs: Vec<&[u8]> = storage.iter().map(|v| v.as_slice()).collect();
+                let mut outputs = vec![[0u8; 16]; count];
+                hash_many_dispatch(&inputs, &mut outputs);
+                for (msg, out) in storage.iter().zip(outputs.iter()) {
+                    assert_eq!(*out, backend::hash(msg), "count={count} len={len}");
+                }
+            }
+        }
+    }
+
     #[cfg(feature = "opt")]
     #[test]
     fn opt_profile_batch_matches_single_stream() {
+        #[cfg(feature = "std")]
+        let handle = std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(opt_profile_batch_matches_single_stream_body)
+            .expect("spawn test thread");
+        #[cfg(feature = "std")]
+        handle.join().expect("test thread");
+        #[cfg(not(feature = "std"))]
+        opt_profile_batch_matches_single_stream_body();
+    }
+
+    #[cfg(feature = "opt")]
+    fn opt_profile_batch_matches_single_stream_body() {
         let count = runtime_lanes().max(4);
         let len = 200usize;
         let storage: Vec<Vec<u8>> = (0..count)

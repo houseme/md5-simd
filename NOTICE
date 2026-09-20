@@ -8,16 +8,22 @@ are maintained in this tree.
 Vendored scalar compression
 ---------------------------
 
-src/simd/single_x86.rs and src/simd/single_stream.rs adapt the compression path
-from fast-md5 1.0.0, Copyright (c) 2026, Latigo LLC, under BSD-2-Clause.
-Source: https://github.com/ogital-net/fast-md5
-The assembly's upstream provenance is animetosho/md5-optimisation (PD/CC0):
+src/simd/single_x86.rs and src/simd/single_stream.rs adapt the x86_64
+compression path from fast-md5 1.0.0, Copyright (c) 2026, Latigo LLC, under
+BSD-2-Clause. Source: https://github.com/ogital-net/fast-md5
+The x86 assembly's upstream provenance is animetosho/md5-optimisation (PD/CC0):
 https://github.com/animetosho/md5-optimisation
+
+src/simd/single_aarch.rs adapts fast-md5 `src/aarch64.rs` (same copyright and
+BSD-2-Clause license): per-round unaligned LE message loads, inline `ror` via
+`asm!`, and F/G/H/I identities tuned for AArch64. RFC K constants are imported
+from this crate's `consts` module rather than duplicated.
 
 The integration retains the assembly body, uses the shared in-tree K constants,
 and routes framing and state management through the crate's own implementation.
-These files are compiled for x86_64 with opt unless force-portable is enabled.
-No third-party streaming or HMAC API is re-exported.
+These files are compiled for x86_64 (asm) and little-endian aarch64 with `opt`
+unless force-portable is enabled. No third-party streaming or HMAC API is
+re-exported.
 
 Design references
 -----------------

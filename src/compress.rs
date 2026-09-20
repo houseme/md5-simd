@@ -31,10 +31,13 @@ pub(crate) fn mix_f(x: u32, y: u32, z: u32) -> u32 {
     z ^ (x & (y ^ z))
 }
 
-/// Production G identity: `G(x,y,z) ≡ y ^ (z & (x ^ y))`.
+/// Production G identity: `(x & z) + (y & !z)`.
+///
+/// Masks are disjoint, so addition matches textbook `(x & z) | (y & !z)`.
+/// The add form can schedule better than the xor-mask identity on aarch64.
 #[inline(always)]
 pub(crate) fn mix_g(x: u32, y: u32, z: u32) -> u32 {
-    y ^ (z & (x ^ y))
+    (x & z).wrapping_add(y & !z)
 }
 
 /// Production H identity.
@@ -113,23 +116,23 @@ pub fn compress(state: &mut [u32; 4], block: &[u8; 64]) {
     step!(b ^ (d & (a ^ b)), c, d, a, b, 14);
     step!(a ^ (c & (d ^ a)), b, c, d, a, 15);
 
-    // Round 2 — G
-    step!(c ^ (d & (b ^ c)), a, b, c, d, 16);
-    step!(b ^ (c & (a ^ b)), d, a, b, c, 17);
-    step!(a ^ (b & (d ^ a)), c, d, a, b, 18);
-    step!(d ^ (a & (c ^ d)), b, c, d, a, 19);
-    step!(c ^ (d & (b ^ c)), a, b, c, d, 20);
-    step!(b ^ (c & (a ^ b)), d, a, b, c, 21);
-    step!(a ^ (b & (d ^ a)), c, d, a, b, 22);
-    step!(d ^ (a & (c ^ d)), b, c, d, a, 23);
-    step!(c ^ (d & (b ^ c)), a, b, c, d, 24);
-    step!(b ^ (c & (a ^ b)), d, a, b, c, 25);
-    step!(a ^ (b & (d ^ a)), c, d, a, b, 26);
-    step!(d ^ (a & (c ^ d)), b, c, d, a, 27);
-    step!(c ^ (d & (b ^ c)), a, b, c, d, 28);
-    step!(b ^ (c & (a ^ b)), d, a, b, c, 29);
-    step!(a ^ (b & (d ^ a)), c, d, a, b, 30);
-    step!(d ^ (a & (c ^ d)), b, c, d, a, 31);
+    // Round 2 — G: (x&z)+(y&!z) on the RFC operand order for each step.
+    step!((b & d).wrapping_add(c & !d), a, b, c, d, 16);
+    step!((a & c).wrapping_add(b & !c), d, a, b, c, 17);
+    step!((d & b).wrapping_add(a & !b), c, d, a, b, 18);
+    step!((c & a).wrapping_add(d & !a), b, c, d, a, 19);
+    step!((b & d).wrapping_add(c & !d), a, b, c, d, 20);
+    step!((a & c).wrapping_add(b & !c), d, a, b, c, 21);
+    step!((d & b).wrapping_add(a & !b), c, d, a, b, 22);
+    step!((c & a).wrapping_add(d & !a), b, c, d, a, 23);
+    step!((b & d).wrapping_add(c & !d), a, b, c, d, 24);
+    step!((a & c).wrapping_add(b & !c), d, a, b, c, 25);
+    step!((d & b).wrapping_add(a & !b), c, d, a, b, 26);
+    step!((c & a).wrapping_add(d & !a), b, c, d, a, 27);
+    step!((b & d).wrapping_add(c & !d), a, b, c, d, 28);
+    step!((a & c).wrapping_add(b & !c), d, a, b, c, 29);
+    step!((d & b).wrapping_add(a & !b), c, d, a, b, 30);
+    step!((c & a).wrapping_add(d & !a), b, c, d, a, 31);
 
     // Round 3 — H
     step!(b ^ c ^ d, a, b, c, d, 32);
@@ -291,6 +294,8 @@ where
     assert_eq!(data.len() % 64, 0, "input must contain complete MD5 blocks");
     let (chunks, _rest) = data.as_chunks::<64>();
     // Local state avoids repeated `&mut state` reloads in long 1 MiB loops.
+    // Tight iteration (no manual prefetch): sequential HW prefetch covers this
+    // path; measured parity or better than `prfm` on Apple Silicon.
     let mut local = *state;
     for block in chunks {
         compress(&mut local, block);
@@ -299,7 +304,7 @@ where
 }
 
 /// Serialize state as 16 LE bytes.
-#[inline]
+#[inline(always)]
 pub fn state_to_bytes(state: [u32; 4]) -> [u8; 16] {
     let mut out = [0u8; 16];
     out[0..4].copy_from_slice(&state[0].to_le_bytes());
