@@ -19,6 +19,30 @@ fn pattern(len: usize, salt: u8) -> Vec<u8> {
 }
 
 #[test]
+fn batch_hashing_fits_one_mebibyte_stack() {
+    std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(|| {
+            let engine = Md5Engine::new();
+            for count in [4, 8, 16, 32, 64] {
+                for len in [55, 56, 64, 1024] {
+                    let storage: Vec<Vec<u8>> =
+                        (0..count).map(|lane| pattern(len, lane as u8)).collect();
+                    let inputs: Vec<&[u8]> = storage.iter().map(Vec::as_slice).collect();
+                    let mut outputs = vec![[0; 16]; count];
+                    engine.hash_many(&inputs, &mut outputs);
+                    for (input, output) in inputs.iter().zip(outputs) {
+                        assert_eq!(hex_encode(&output), ref_hex(input));
+                    }
+                }
+            }
+        })
+        .expect("spawn bounded-stack batch test")
+        .join()
+        .expect("batch hashing fits the bounded stack");
+}
+
+#[test]
 fn hash_many_equal_pairs_match_reference() {
     run_with_large_stack(hash_many_equal_pairs_match_reference_body);
 }

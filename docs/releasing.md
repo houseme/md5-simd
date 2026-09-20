@@ -103,7 +103,10 @@ zeroize, accelerated zeroize, and the std/pair-interleave profile. Release API,
 boundary, batch, and long-message differential tests passed, as did both clippy
 profiles, formatting, docs.rs-feature and minimal rustdoc, release metadata guard
 tests, and the x86_64 cross-check. Cross-compilation is not native execution.
-The source hashing kernels were not changed by this release preparation.
+Windows release validation additionally exposed excessive stack use from debug
+SIMD inlining. Debug builds now reuse a single compression step's frame; release
+builds retain the measured inlining behavior. A 1 MiB thread-stack regression
+test covers lane groups and padding boundaries.
 
 The package preview was verified offline from the local snapshot. The tagged
 release workflow must separately pass native cross-platform CI, a fresh RustSec

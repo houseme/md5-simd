@@ -46,9 +46,11 @@ pub(crate) trait Wide {
 
 /// One MD5 step; `step` is a literal at each unrolled call site.
 ///
-/// G uses the disjoint-mask add identity `(x&z)+(y&!z)` shared with the
-/// scalar production kernel (see `compress::mix_g`).
-#[inline(always)]
+/// Debug builds reuse one step's stack frame instead of accumulating temporary
+/// vectors across all 64 expanded steps. Release builds inline into the ISA
+/// entry point so the message index and rotate amount remain constants.
+#[cfg_attr(debug_assertions, inline(never))]
+#[cfg_attr(not(debug_assertions), inline(always))]
 fn wide_step_with_k<W: Wide>(v: &mut [W::V; 4], m: &[W::V; 16], step: usize, kv: W::V) {
     let dest = DEST[step & 3];
     let x = v[(dest + 1) & 3];
@@ -176,8 +178,8 @@ fn store_digests<W: Wide>(state: &[W::V; 4], lo: usize, n: usize, outputs: &mut 
 /// Gather one 64-byte block index for every active SIMD group.
 ///
 /// Must stay `#[inline(always)]` on x86 so gathers run inside
-/// `#[target_feature]` entries. Debug stack growth is handled by widening
-/// test thread stacks.
+/// `#[target_feature]` entries. Compression steps remain out of line in debug
+/// builds to bound their temporary stack storage.
 ///
 /// # Safety
 /// For each group, every active lane pointer at `start` has 64 readable bytes.

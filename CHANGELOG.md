@@ -22,6 +22,9 @@
 
 ### Validation and release tooling
 
+- Bound debug SIMD compression stack usage by reusing one round's stack frame;
+  retain release-mode inlining. Add a 1 MiB thread-stack regression check for
+  batch sizes and padding boundaries, including the Windows README example path.
 - Added immutable before/after executable comparisons to the ABBA runner.
 - Added independent RustCrypto checks for 1 MiB unaligned inputs, final padding
   boundaries, and the streaming APIs. Single-message instruction-scheduling
