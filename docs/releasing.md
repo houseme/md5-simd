@@ -134,8 +134,9 @@ requires manual dispatch with `publish=true` and the `crates-io` environment.
 Before enabling upload, configure that environment's reviewer/tag restrictions
 and its `CARGO_REGISTRY_TOKEN` secret with a crates.io token scoped to publishing
 this crate. The workflow does not configure environment protection automatically.
-The token is exposed only to the final publish step through Cargo's named-registry
-credential environment variable. No publishing credentials are needed by CI,
+The token is exposed only to the final publish step through
+`CARGO_REGISTRY_TOKEN`, Cargo's credential variable for the built-in crates.io
+registry (including `--registry crates-io`). No publishing credentials are needed by CI,
 Audit, or candidate dry runs. Re-publishing an existing version is not supported.
 
 Release helper scripts use Python 3.11+ (`tomllib`); the validation jobs use the
