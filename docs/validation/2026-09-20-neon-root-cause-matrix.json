@@ -1,0 +1,24 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "comparison": "md5-simd fused NEON batch vs sequential md5-simd digest",
+  "diagnostic_medians": [
+    {"count": 4, "bytes": 64, "simd_ns": 305.55, "sequential_ns": 474.87, "ratio": 1.55},
+    {"count": 4, "bytes": 1024, "simd_ns": 2849.3, "sequential_ns": 4440.7, "ratio": 1.56},
+    {"count": 4, "bytes": 65536, "simd_ns": 170960.0, "sequential_ns": 270730.0, "ratio": 1.58},
+    {"count": 8, "bytes": 64, "simd_ns": 390.86, "sequential_ns": 944.29, "ratio": 2.42},
+    {"count": 8, "bytes": 1024, "simd_ns": 2992.1, "sequential_ns": 8933.9, "ratio": 2.98},
+    {"count": 8, "bytes": 65536, "simd_ns": 178480.0, "sequential_ns": 541530.0, "ratio": 3.03},
+    {"count": 16, "bytes": 64, "simd_ns": 694.76, "sequential_ns": 1902.0, "ratio": 2.74},
+    {"count": 16, "bytes": 1024, "simd_ns": 5115.6, "sequential_ns": 17924.0, "ratio": 3.50}
+  ],
+  "root_causes": [
+    "single-message APIs intentionally use the serial single-stream backend",
+    "pick_batch rejects fewer than four messages and short messages below the measured crossover",
+    "adjacent-only scheduling misses non-adjacent equal lengths",
+    "underfull tail groups duplicate lanes or fall back to scalar work",
+    "gather/transpose and padding overhead dominate only at small workloads",
+    "multi-group K broadcasts were repeated per group; shared-K repair is now present"
+  ],
+  "conclusion": "AArch64 NEON has a real advantage whenever enough independent equal-length work reaches the fused kernel. The apparent no-advantage cases are dispatch/workload boundaries, not a blanket NEON kernel failure."
+}

@@ -11,8 +11,9 @@
 MD5 checksums for object-storage workloads: streaming uploads, snapshot ETags,
 RustCrypto integration, and batches of independent messages.
 
-The default build combines an x86_64 scalar assembly compressor with runtime
-selected SIMD batch kernels. Other targets retain a portable Rust implementation.
+The default build uses optimized x86_64 and little-endian AArch64 single-stream
+compressors with SIMD batch kernels. Other targets retain a portable Rust
+implementation.
 Single-stream hashing and batch hashing use separate dispatch paths.
 
 > MD5 is cryptographically broken. Use it only for legacy interoperability and
@@ -20,11 +21,9 @@ Single-stream hashing and batch hashing use separate dispatch paths.
 
 ## Getting started
 
-For a local checkout:
-
 ```toml
 [dependencies]
-md5-simd = { path = "../md5-simd" }
+md5-simd = "0.2"
 ```
 
 The library import is `md5_simd`. Default features are `std`, `opt`, `digest`, and

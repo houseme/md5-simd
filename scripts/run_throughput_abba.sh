@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Same-host Criterion ABBA; one benchmark per filter, three rounds per cell.
-# Builds once before timing. Rejects missing samples, baseline drift, and
+# Builds once, or accepts two prebuilt binaries, and snapshots before timing.
+# Rejects missing samples, baseline drift, and
 # inconsistent candidate cells. Raw logs/estimates remain in the artifact dir.
 set -euo pipefail
 
@@ -19,6 +20,19 @@ drift_limit=${ABBA_DRIFT_LIMIT:-0.03}
 artifact_dir=${ABBA_ARTIFACT_DIR:-"$crate_dir/abba-$(date -u +%Y%m%dT%H%M%SZ)"}
 baseline_filter=${ABBA_BASELINE_FILTER:-'^oneshot/md-5/1048576$'}
 candidate_filter=${ABBA_CANDIDATE_FILTER:-'^oneshot/md5-simd\[(single-asm\(x86_64\)|single-aarch\(aarch64\)|in-tree\(aarch64\)|in-tree\(x86_64\)|in-tree)\]/1048576$'}
+baseline_binary=${ABBA_BASELINE_BINARY:-}
+candidate_binary=${ABBA_CANDIDATE_BINARY:-}
+build_mode=default-features
+if [[ -n "$baseline_binary" || -n "$candidate_binary" ]]; then
+  build_mode=external-binaries
+  if [[ ! -x "$baseline_binary" || ! -x "$candidate_binary" ]]; then
+    echo 'provide both ABBA_BASELINE_BINARY and ABBA_CANDIDATE_BINARY as executable paths' >&2
+    exit 2
+  fi
+  # Resolve before changing to the crate directory.
+  baseline_binary=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$baseline_binary")
+  candidate_binary=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$candidate_binary")
+fi
 
 # Validate numeric gates before building or collecting any measurements.
 python3 - "$rounds" "$samples" "$measurement" "$warmup" "$cooldown" "$drift_limit" <<'PYCFG'
@@ -35,8 +49,9 @@ PYCFG
 mkdir "$artifact_dir"
 artifact_dir=$(cd "$artifact_dir" && pwd)
 cd "$crate_dir"
-"$cargo_bin" bench --locked --bench throughput --no-run --message-format=json > "$artifact_dir/build.jsonl"
-binary=$(python3 - "$artifact_dir/build.jsonl" <<'PY'
+if [[ -z "$baseline_binary" ]]; then
+  "$cargo_bin" bench --locked --bench throughput --no-run --message-format=json > "$artifact_dir/build.jsonl"
+  binary=$(python3 - "$artifact_dir/build.jsonl" <<'PY'
 import json, sys
 paths = [p['executable'] for line in open(sys.argv[1])
          if (p := json.loads(line)).get('executable') and p.get('target', {}).get('name') == 'throughput']
@@ -44,10 +59,25 @@ if len(paths) != 1:
     raise SystemExit('expected exactly one throughput benchmark binary')
 print(paths[0])
 PY
-)
-for filter in "$baseline_filter" "$candidate_filter"; do
-  "$binary" --bench --list "$filter" > "$artifact_dir/selected.txt"
-  python3 - "$artifact_dir/selected.txt" <<'PY'
+  )
+  baseline_binary=$binary
+  candidate_binary=$binary
+fi
+# Snapshot both executables so a concurrent Cargo build cannot replace them.
+cp "$baseline_binary" "$artifact_dir/baseline-bench"
+cp "$candidate_binary" "$artifact_dir/candidate-bench"
+baseline_binary="$artifact_dir/baseline-bench"
+candidate_binary="$artifact_dir/candidate-bench"
+for side in baseline candidate; do
+  if [[ "$side" == baseline ]]; then
+    binary=$baseline_binary
+    filter=$baseline_filter
+  else
+    binary=$candidate_binary
+    filter=$candidate_filter
+  fi
+  "$binary" --bench --list "$filter" > "$artifact_dir/$side-selected.txt"
+  python3 - "$artifact_dir/$side-selected.txt" <<'PY'
 import sys
 selected = [line for line in open(sys.argv[1]) if line.rstrip().endswith(': benchmark')]
 if len(selected) != 1:
@@ -58,10 +88,13 @@ done
   uname -sm
   "$cargo_bin" -V
   rustc -Vv
-  printf 'features=default\nbaseline_filter=%s\ncandidate_filter=%s\n' "$baseline_filter" "$candidate_filter"
+  printf 'build_mode=%s\n' "$build_mode"
+  printf 'baseline_filter=%s\ncandidate_filter=%s\n' "$baseline_filter" "$candidate_filter"
+  printf 'RUSTFLAGS=%s\n' "${RUSTFLAGS:-}"
+  printf 'external binaries require their original build provenance to be retained\n'
   printf 'rounds=%s samples=%s measurement=%ss warmup=%ss cooldown=%ss drift_limit=%s\n' \
     "$rounds" "$samples" "$measurement" "$warmup" "$cooldown" "$drift_limit"
-  python3 - "$binary" Cargo.lock <<'PY'
+  python3 - "$baseline_binary" "$candidate_binary" Cargo.lock <<'PY'
 import hashlib, pathlib, sys
 for name in sys.argv[1:]:
     print(pathlib.Path(name).name, hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest())
@@ -70,8 +103,8 @@ PY
 
 for cell in A1 B1 B2 A2; do
   case "$cell" in
-    A1|A2) filter=$baseline_filter ;;
-    B1|B2) filter=$candidate_filter ;;
+    A1|A2) filter=$baseline_filter; binary=$baseline_binary ;;
+    B1|B2) filter=$candidate_filter; binary=$candidate_binary ;;
   esac
   for ((round = 1; round <= rounds; round++)); do
     CRITERION_HOME="$artifact_dir/$cell-$round" "$binary" --bench --noplot \

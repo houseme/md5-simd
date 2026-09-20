@@ -1,0 +1,30 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "scope": "NEON multi-group codegen repair",
+  "root_cause": "compress_groups_interleaved used a runtime 0..64 loop while the single-group kernel was statically unrolled.",
+  "change": "statically expand all 64 shared-K steps for multi-group AArch64 compression",
+  "workload": "object_mix_reorderable/4587520",
+  "baseline": "sequential md-5",
+  "candidate": "hash_many_grouped + NEON shared-K statically-unrolled multi-group path",
+  "method": {
+    "order": "A1,B1,B2,A2",
+    "rounds_per_cell": 3,
+    "samples_per_round": 20,
+    "measurement_seconds": 5,
+    "warmup_seconds": 1,
+    "cooldown_seconds": 2,
+    "drift_limit": 0.03
+  },
+  "cells_ns": {
+    "A1": 4802252.574999999,
+    "B1": 2956029.367445055,
+    "B2": 2924597.82260101,
+    "A2": 4745373.33
+  },
+  "baseline_drift": 0.011844284346080869,
+  "candidate_variation": 0.010633028612706763,
+  "accepted_stability": true,
+  "baseline_over_candidate": 1.6235727238687971,
+  "conclusion": "Accepted stable 1.62x batch lead. Compared with earlier campaigns this is directional evidence only; no exact percentage delta is claimed."
+}

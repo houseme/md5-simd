@@ -1,9 +1,11 @@
 # Changelog
 
-## 0.2.0 — Unreleased
+## 0.2.0 — 2026-09-20
 
 ### Performance follow-up
 
+- Added the optimized little-endian AArch64 scalar backend while retaining
+  shared framing, portable fallbacks, and third-party attribution.
 - Added `Md5Engine::hash_many_grouped` for object schedulers that need to group
   non-adjacent equal-length messages while restoring caller output order.
 - Added AArch64 NEON multi-group shared-K scheduling and static 64-step expansion
@@ -15,10 +17,18 @@
 - Current Apple Silicon evidence shows about 3.10× for eight independent 1 MiB
   messages and 4.22× for sixteen; single-message AArch64 remains near
   RustCrypto `md-5` parity and is not advertised as a large speedup.
-- Inlined the statically expanded AArch64 multi-group kernel; a fresh 16×1 MiB
-  ABBA measured 2.40× versus sequential `md-5` with both stability gates passed.
 - Specialized the multi-group kernel for 2/3/4 groups without inlining the full
   compressor into the caller; fresh 16×1 MiB ABBA reached 4.22×.
+
+### Validation and release tooling
+
+- Added immutable before/after executable comparisons to the ABBA runner.
+- Added independent RustCrypto checks for 1 MiB unaligned inputs, final padding
+  boundaries, and the streaming APIs. Single-message instruction-scheduling
+  experiments did not meet the promotion threshold; the production kernel was
+  retained.
+- Included the curated performance evidence referenced by the documentation in
+  version control so clean-checkout release packages retain those records.
 - Moved wide-SIMD integration tests to explicit 8 MiB test stacks so debug
   x86_64 validation no longer fails from the test runner's default stack size.
 

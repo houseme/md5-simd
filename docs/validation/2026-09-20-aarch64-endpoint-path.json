@@ -1,0 +1,27 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "scope": "single-message endpoint path diagnosis",
+  "measurements": {
+    "oneshot_1mib": {
+      "md5_simd_active_ms": 1.085,
+      "md_5_ms": 1.082,
+      "active_over_md_5": 0.9972,
+      "in_tree_ms": 1.094,
+      "active_over_in_tree": 1.0083
+    },
+    "stream_4k_1mib": {
+      "md5_simd_ms": 1.082,
+      "md_5_ms": 1.084,
+      "md5_simd_over_md_5": 0.9982
+    }
+  },
+  "path_checks": [
+    "hash_opt_bulk directly loops the selected single-stream transform for complete blocks",
+    "no generic FnMut boundary appears in the active opt bulk loop",
+    "padding is one final block for a 1 MiB input",
+    "Md5 and Digest streaming use the monomorphic update_opt/bulk paths"
+  ],
+  "root_cause": "The remaining single-message gap is compression code generation and instruction scheduling, not framing or tail construction. The in-tree and aarch64 opt kernels are already within roughly one percent end to end.",
+  "decision": "Do not add another framing fast path without a separate measurement; focus future single-message work on a new compiler/ISA/backend direction."
+}

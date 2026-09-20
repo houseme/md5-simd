@@ -1,6 +1,6 @@
 [package]
 name = "md5-simd"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "High-throughput MD5 for object-storage checksums: Clone-friendly ETag API, x86_64 assembly, SIMD multi-buffer batches"

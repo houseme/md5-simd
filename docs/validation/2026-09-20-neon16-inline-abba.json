@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "scope": "NEON multi-group inline codegen candidate",
+  "workload": "hash_many_equal_16/1048576",
+  "baseline": "sequential md-5",
+  "candidate": "NEON8 shared-K statically-unrolled multi-group with inline(always)",
+  "method": {
+    "order": "A1,B1,B2,A2",
+    "rounds_per_cell": 3,
+    "samples_per_round": 20,
+    "measurement_seconds": 5,
+    "warmup_seconds": 1,
+    "cooldown_seconds": 2,
+    "drift_limit": 0.03
+  },
+  "cells_ns": {
+    "A1": 17468741.65625,
+    "B1": 7246512.958333334,
+    "B2": 7272192.260416666,
+    "A2": 17440880.94642857
+  },
+  "baseline_drift": 0.0015948893383205265,
+  "candidate_variation": 0.003543677108008403,
+  "accepted_stability": true,
+  "baseline_over_candidate": 2.4044583918953717,
+  "conclusion": "Accepted stable 2.40x throughput lead; same-window comparison confirms the candidate is eligible for retention."
+}

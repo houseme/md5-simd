@@ -1,0 +1,29 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "scope": "independent equal-length message batching",
+  "features": "default",
+  "workload": "hash_many_equal_8/1048576",
+  "candidate": "md5-simd NEON8 fused batch",
+  "baseline": "sequential RustCrypto md-5",
+  "method": {
+    "order": "A1,B1,B2,A2",
+    "rounds_per_cell": 3,
+    "samples_per_round": 20,
+    "measurement_seconds": 5,
+    "warmup_seconds": 1,
+    "cooldown_seconds": 2,
+    "drift_limit": 0.03
+  },
+  "cells_ns": {
+    "A1": 8809534.359649122,
+    "B1": 2839941.2283950616,
+    "B2": 2852935.1089506173,
+    "A2": 8863306.708333332
+  },
+  "baseline_drift": 0.00610388091912184,
+  "candidate_variation": 0.004575404739237898,
+  "accepted_stability": true,
+  "baseline_over_candidate": 3.1043781773454913,
+  "conclusion": "Accepted 3.10x throughput lead for eight independent equal-length 1 MiB messages. This does not claim a single-message speedup."
+}

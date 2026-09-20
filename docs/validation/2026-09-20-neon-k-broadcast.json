@@ -1,0 +1,30 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "scope": "NEON multi-group kernel root-cause candidate",
+  "root_cause": "wide_step broadcasted the same K[step] once per SIMD group; multi-group blocks repeated the load and broadcast.",
+  "change": "compute one vector K broadcast per step and reuse it across groups; enable the shared-K multi-group path for two or more groups on aarch64.",
+  "workload": "object_mix_reorderable/4587520",
+  "baseline": "sequential md-5",
+  "candidate": "hash_many_grouped + NEON shared-K multi-group path",
+  "method": {
+    "order": "A1,B1,B2,A2",
+    "rounds_per_cell": 3,
+    "samples_per_round": 20,
+    "measurement_seconds": 5,
+    "warmup_seconds": 1,
+    "cooldown_seconds": 2,
+    "drift_limit": 0.03
+  },
+  "cells_ns": {
+    "A1": 4796869.3122807015,
+    "B1": 3017109.8653846155,
+    "B2": 3016578.6875,
+    "A2": 4813268.886666667
+  },
+  "baseline_drift": 0.0034188078345140926,
+  "candidate_variation": 0.00017605520127383922,
+  "accepted_stability": true,
+  "baseline_over_candidate": 1.5927468106309375,
+  "conclusion": "The repaired path remains a stable 1.59x batch lead. This campaign does not isolate the K-sharing delta from the previous grouped campaign; no independent percentage improvement is claimed."
+}

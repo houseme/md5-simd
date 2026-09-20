@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "scope": "NEON multi-group const-generic specialization",
+  "workload": "hash_many_equal_16/1048576",
+  "baseline": "sequential md-5",
+  "candidate": "NEON8 shared-K statically-unrolled const 2-group backend",
+  "method": {
+    "order": "A1,B1,B2,A2",
+    "rounds_per_cell": 3,
+    "samples_per_round": 20,
+    "measurement_seconds": 5,
+    "warmup_seconds": 1,
+    "cooldown_seconds": 2,
+    "drift_limit": 0.03
+  },
+  "cells_ns": {
+    "A1": 17478160.368181817,
+    "B1": 4152970.534375,
+    "B2": 4136365.8617424243,
+    "A2": 17467809.916666664
+  },
+  "baseline_drift": 0.0005921934172200549,
+  "candidate_variation": 0.003998264012502695,
+  "accepted_stability": true,
+  "baseline_over_candidate": 4.215774172371209,
+  "conclusion": "Accepted stable 4.22x throughput lead. The const-generic group specialization removes the runtime group loop while keeping the large compressor out of the caller to avoid the prior debug stack overflow."
+}

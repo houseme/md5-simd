@@ -1,0 +1,71 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "scope": "mixed lengths, tail batches, and irregular object scheduling",
+  "method": {
+    "order": "A1,B1,B2,A2",
+    "rounds_per_cell": 3,
+    "samples_per_round": 20,
+    "measurement_seconds": "3 s except tail_9 rerun at 5 s",
+    "warmup_seconds": 1,
+    "cooldown_seconds": 2,
+    "drift_limit": 0.03
+  },
+  "results": [
+    {
+      "workload": "tail_7x1mib",
+      "bytes": 7340032,
+      "baseline": "sequential md-5",
+      "candidate": "NEON8 hash_many",
+      "baseline_over_candidate": 2.669554140932926,
+      "baseline_drift": 0.003127279859403753,
+      "candidate_variation": 0.005162959911523046,
+      "accepted_stability": true,
+      "conclusion": "accepted"
+    },
+    {
+      "workload": "tail_9x1mib",
+      "bytes": 9437184,
+      "baseline": "sequential md-5",
+      "candidate": "NEON8 hash_many plus scalar tail",
+      "baseline_over_candidate": 1.7327072326720105,
+      "baseline_drift": 0.01421325111038585,
+      "candidate_variation": 0.011440239386171669,
+      "accepted_stability": true,
+      "conclusion": "accepted"
+    },
+    {
+      "workload": "grouped_mix",
+      "bytes": 5111808,
+      "baseline": "sequential md-5",
+      "candidate": "length-run NEON batching",
+      "baseline_over_candidate": 1.6017166543412042,
+      "baseline_drift": 0.0018919634778403749,
+      "candidate_variation": 0.0032489785295093387,
+      "accepted_stability": true,
+      "conclusion": "accepted"
+    },
+    {
+      "workload": "object_mix_irregular",
+      "bytes": 4399104,
+      "baseline": "sequential md-5",
+      "candidate": "scheduler with mostly singleton length runs",
+      "baseline_over_candidate": 1.012908124343557,
+      "baseline_drift": 0.0015803245633798646,
+      "candidate_variation": 0.009175603110871844,
+      "accepted_stability": true,
+      "conclusion": "near parity; batching opportunity is lost when adjacent lengths do not repeat"
+    },
+    {
+      "workload": "object_mix_reorderable",
+      "bytes": 4587520,
+      "baseline": "sequential md-5",
+      "candidate": "hash_many_grouped with internal length sort and output scatter",
+      "baseline_over_candidate": 1.6324211231878003,
+      "baseline_drift": 0.0006533603148937139,
+      "candidate_variation": 0.001009225760789656,
+      "accepted_stability": true,
+      "conclusion": "accepted; scheduler reordering exposes four repeated length groups"
+    }
+  ]
+}

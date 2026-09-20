@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "scope": "NEON multi-group 16-message 1 MiB batch",
+  "baseline": "sequential md-5",
+  "candidate": "md5-simd NEON8 two-group statically-unrolled shared-K path",
+  "workload": "hash_many_equal_16/1048576",
+  "method": {
+    "order": "A1,B1,B2,A2",
+    "rounds_per_cell": 3,
+    "samples_per_round": 20,
+    "measurement_seconds": 5,
+    "warmup_seconds": 1,
+    "cooldown_seconds": 2,
+    "drift_limit": 0.03
+  },
+  "cells_ns": {
+    "A1": 17455826.64285714,
+    "B1": 7414165.660714285,
+    "B2": 7474255.992647059,
+    "A2": 17466072.164285712
+  },
+  "baseline_drift": 0.0005869399162923283,
+  "candidate_variation": 0.00810480028132865,
+  "accepted_stability": true,
+  "baseline_over_candidate": 2.3455742737685408,
+  "conclusion": "Accepted stable 2.35x throughput lead for two NEON8 groups."
+}

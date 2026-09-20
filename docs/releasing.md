@@ -1,6 +1,6 @@
 # Release guide
 
-The manifest currently identifies the first release candidate as `0.1.0`.
+The manifest identifies the current release as `0.2.0`.
 Preparing or validating a package does not publish it.
 
 ## Toolchain and compatibility
@@ -92,6 +92,25 @@ The `0.1.0` candidate was checked on aarch64 macOS with Rust 1.98.1.
 The library's executable hashing code is unchanged by this preparation. That check used an uncommitted local snapshot and performed no registry upload.
 Remote CI and native ISA coverage remain separate release evidence.
 
+## 0.2.0 preparation — 2026-09-20
+
+The manifest, lockfile, changelog, and registry installation example identify
+`0.2.0`. Curated validation JSON is versioned and included in the package;
+local binaries, raw benchmark runs, and maintainer scripts remain excluded.
+
+Native aarch64 macOS checks passed for default and all features, minimal
+zeroize, accelerated zeroize, and the std/pair-interleave profile. Release API,
+boundary, batch, and long-message differential tests passed, as did both clippy
+profiles, formatting, docs.rs-feature and minimal rustdoc, release metadata guard
+tests, and the x86_64 cross-check. Cross-compilation is not native execution.
+The source hashing kernels were not changed by this release preparation.
+
+The package preview was verified offline from the local snapshot. The tagged
+release workflow must separately pass native cross-platform CI, a fresh RustSec
+audit, clean-checkout packaging, and the registry dry run before upload. Consult
+that workflow's result and the registry for publication status; this preparation
+record is not a claim that an upload has occurred.
+
 ## Automated checks and release workflow
 
 - `ci.yml` runs on branch pushes and pull requests, and is reusable by releases.
@@ -127,12 +146,12 @@ After preparing, committing, and reviewing a version, the release sequence is:
 
 ```bash
 # Example only: use the version actually recorded in Cargo.toml.
-git tag -a v0.1.0 -m 'Release v0.1.0'
-git push origin v0.1.0
+git tag -a v0.2.0 -m 'Release v0.2.0'
+git push origin v0.2.0
 # The tag run validates and retains a candidate without uploading to crates.io.
-gh workflow run release.yml --ref v0.1.0 -f publish=false
+gh workflow run release.yml --ref v0.2.0 -f publish=false
 # Only after deciding to publish and configuring the environment:
-gh workflow run release.yml --ref v0.1.0 -f publish=true
+gh workflow run release.yml --ref v0.2.0 -f publish=true
 ```
 
 Both candidate and publish jobs check out the triggering revision by SHA, so a

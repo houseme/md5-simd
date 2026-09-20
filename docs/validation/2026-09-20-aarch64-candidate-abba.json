@@ -1,0 +1,59 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "scope": "experimental 1 MiB oneshot candidate only",
+  "source": "HEAD 8e902e4 plus R0 shared-padding-builder fix",
+  "features": "default",
+  "rustc": "1.98.1",
+  "workload": "oneshot/1048576",
+  "method": {
+    "order": "A1,B1,B2,A2",
+    "rounds_per_cell": 3,
+    "samples_per_round": 20,
+    "measurement_seconds": 3,
+    "warmup_seconds": 1,
+    "cooldown_seconds": 2,
+    "drift_limit": 0.03,
+    "note": "One campaign; diagnostic candidate wiring was benchmark-only and was not connected to production dispatch."
+  },
+  "comparisons": [
+    {
+      "baseline": "md-5 0.11.0",
+      "candidate": "2-step lookahead rodata-K aarch64 candidate",
+      "cells_ns": {
+        "A1": 1066808.0285714287,
+        "B1": 1156358.1711538462,
+        "B2": 1156513.4837278107,
+        "A2": 1066996.8
+      },
+      "baseline_drift": 0.00017694976370208337,
+      "candidate_variation": 0.00013431182296175237,
+      "accepted_stability": true,
+      "baseline_over_candidate": 0.9225781396333508,
+      "decision": "REGRESSION"
+    },
+    {
+      "baseline": "md5-simd single-aarch(aarch64)",
+      "candidate": "2-step lookahead rodata-K aarch64 candidate",
+      "cells_ns": {
+        "A1": 1055536.1103174603,
+        "B1": 1156938.298076923,
+        "B2": 1155659.2548076923,
+        "A2": 1056089.1084558824
+      },
+      "baseline_drift": 0.00052390262447366,
+      "candidate_variation": 0.0011055414721397039,
+      "accepted_stability": true,
+      "baseline_over_candidate": 0.913096710726607,
+      "decision": "REGRESSION"
+    }
+  ],
+  "correctness": {
+    "cargo_test_default": "19 passed",
+    "cargo_test_force_portable": "15 passed",
+    "cargo_test_no_default_features": "13 passed",
+    "candidate_boundary_differential": "passed during benchmark startup for all registered oneshot lengths",
+    "candidate_production_dispatch": false
+  },
+  "conclusion": "Reject candidate; stable but approximately 7.7% slower than md-5 and 8.7% slower than the current single-aarch path. Do not promote or claim an aarch64 speedup."
+}

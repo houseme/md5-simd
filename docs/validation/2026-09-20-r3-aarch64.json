@@ -1,0 +1,48 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "scope": "single-stream and streaming API follow-up",
+  "source": "current working tree after R0 shared-padding fix",
+  "results": {
+    "state_register_loop_candidate": {
+      "diagnostic_1mib_ms": 1.196,
+      "previous_path_diagnostic_1mib_ms": 1.143,
+      "decision": "REJECTED_REGRESSION",
+      "note": "State-retaining transform_blocks increased register pressure and was fully reverted."
+    },
+    "preload_16_message_words_candidate": {
+      "abba": {
+        "rounds_per_cell": 3,
+        "samples_per_round": 20,
+        "measurement_seconds": 5,
+        "warmup_seconds": 1,
+        "cooldown_seconds": 2,
+        "drift_limit": 0.03,
+        "a1_ns": 1111214.1329545453,
+        "b1_ns": 1099184.873193473,
+        "b2_ns": 1097475.2347759895,
+        "a2_ns": 1110219.0813492064,
+        "baseline_drift": 0.0008954634177422705,
+        "candidate_variation": 0.0015553693097289932,
+        "baseline_over_candidate": 1.0112776238091692,
+        "accepted_stability": true
+      },
+      "same_window_original_reference": {
+        "baseline_over_original": 1.0126020244468608,
+        "interpretation": "candidate is not faster than the original within this campaign pair"
+      },
+      "decision": "REJECTED_NO_PROMOTION"
+    },
+    "digest_streaming_bulk_path": {
+      "md5_simd_ms": 1.1222,
+      "md_5_ms": 1.1227,
+      "decision": "PARITY_DIAGNOSTIC"
+    }
+  },
+  "correctness": {
+    "default_tests": "19 passed",
+    "simd_digest_no_default_tests": "14 passed",
+    "clippy": "passed"
+  },
+  "conclusion": "The API bulk-path cleanup is retained for consistency and correctness, but no new aarch64 1 MiB speedup is claimed. Single-stream candidates remain below the 1.15x promotion gate."
+}

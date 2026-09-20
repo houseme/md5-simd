@@ -1,0 +1,58 @@
+{
+  "date": "2026-09-20",
+  "target": "x86_64-unknown-linux-gnu",
+  "source": "HEAD 2428cbc plus current x86 debug-stack portability patch",
+  "provenance": "isolated data-volume checkout; Cargo.toml and wide.rs matched local source before patch",
+  "release_tests": {
+    "tests_many": "7 passed",
+    "benchmark_compile": "passed"
+  },
+  "abba": [
+    {
+      "workload": "oneshot/1048576",
+      "candidate": "single-asm(x86_64)",
+      "baseline": "md-5",
+      "baseline_over_candidate": 1.249568081103454,
+      "baseline_drift": 0.00483004455641467,
+      "candidate_variation": 0.010049408277575944,
+      "accepted_stability": true
+    },
+    {
+      "workload": "streaming_4k_chunks/1048576",
+      "candidate": "single-asm(x86_64)",
+      "baseline": "md-5",
+      "baseline_over_candidate": 1.2632904717674103,
+      "baseline_drift": 0.0019223759000860374,
+      "candidate_variation": 0.01082351544672655,
+      "accepted_stability": true
+    },
+    {
+      "workload": "digest_streaming_4k_chunks/1048576",
+      "candidate": "md5-simd DigestMd5",
+      "baseline": "md-5",
+      "baseline_over_candidate": 1.263244773373696,
+      "baseline_drift": 0.004418851153275005,
+      "candidate_variation": 0.0026114101185956695,
+      "accepted_stability": true
+    },
+    {
+      "workload": "hash_many_equal_8/1024",
+      "candidate": "AVX-512 fused batch",
+      "baseline": "sequential md-5",
+      "baseline_over_candidate": 3.7908348476939002,
+      "baseline_drift": 0.0032330421009576504,
+      "candidate_variation": 0.001078558786239081,
+      "accepted_stability": true
+    },
+    {
+      "workload": "hash_many_equal_16/1024",
+      "candidate": "AVX-512 fused batch",
+      "baseline": "sequential md-5",
+      "baseline_over_candidate": 7.43113712924625,
+      "baseline_drift": 0.011094248055931732,
+      "candidate_variation": 0.0041388162624909075,
+      "accepted_stability": true
+    }
+  ],
+  "release_decision": "Do not prepare 0.2.0 release yet: AArch64 single-message 1 MiB remains parity with md-5, even though current x86_64 single-stream and batch workloads pass their gates."
+}

@@ -1,0 +1,26 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "question": "Does AArch64 expose a real MD5 instruction backend?",
+  "checks": [
+    {
+      "check": "rustc target feature inventory",
+      "result": "no md5/md5h/md5m/md5p/md5im feature exposed"
+    },
+    {
+      "check": "Apple/LLVM assembler",
+      "source": "md5h v0.4s, v1.4s, v2.4s; md5m; md5p; md5im",
+      "result": "all four mnemonics rejected as unrecognized instruction mnemonic"
+    },
+    {
+      "check": "host capability query",
+      "result": "no MD5-specific capability reported"
+    }
+  ],
+  "conclusion": "AArch64 has no deployable MD5 instruction backend to add on this toolchain/host. Do not emit guessed raw encodings or add an md5 target feature that the architecture/toolchain does not define.",
+  "next_valid_targets": [
+    "real hardware/vendor ISA with a documented MD5 extension",
+    "multi-message NEON/SVE batching where the workload permits independent messages",
+    "a different CPU architecture/backend with documented MD5 acceleration"
+  ]
+}

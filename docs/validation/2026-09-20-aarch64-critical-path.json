@@ -1,0 +1,172 @@
+{
+  "date": "2026-09-20",
+  "target": "aarch64-apple-darwin",
+  "cpu": "Apple M5 Max",
+  "rustc": "1.98.1",
+  "llvm": "22.1.8",
+  "source_revision": "8619868",
+  "features": "default",
+  "profile": {
+    "opt_level": 3,
+    "lto": "thin",
+    "codegen_units": 1
+  },
+  "environment": "Interactive desktop, no core pinning or exclusive resource reservation; no other builds/tests run during measured cells. Results apply only to this host/session.",
+  "gate": {
+    "rounds_per_cell": 3,
+    "criterion_samples": 20,
+    "measurement_seconds": 3,
+    "warmup_seconds": 1,
+    "cooldown_seconds": 2,
+    "stability_limit": 0.03,
+    "minimum_promotion_speedup": 1.02
+  },
+  "speedup_definition": "baseline latency / candidate latency; larger is better",
+  "historical_0997": {
+    "kind": "diagnostic, not ABBA",
+    "md5_simd_ns": 1085000,
+    "md_5_ns": 1082000,
+    "speedup": 0.9972350230414746
+  },
+  "campaigns": {
+    "abba-h-vs-old": {
+      "cell_medians_ns": {
+        "A1": 1093510.3137651822,
+        "B1": 1081631.847985348,
+        "B2": 1083400.408128309,
+        "A2": 1090106.4458791208
+      },
+      "baseline_drift": 0.0031127899236186307,
+      "candidate_variation": 0.001635085122775548,
+      "limit": 0.03,
+      "accepted": true,
+      "baseline_over_candidate": 1.0085839384046897,
+      "round_medians_ns": {
+        "A1": [
+          1091749.7871347403,
+          1094124.4786324785,
+          1093510.3137651822
+        ],
+        "B1": [
+          1081631.847985348,
+          1082892.416208791,
+          1080451.6062157657
+        ],
+        "B2": [
+          1083400.408128309,
+          1078985.1642857143,
+          1085556.091346154
+        ],
+        "A2": [
+          1087219.226923077,
+          1092204.5715249663,
+          1090106.4458791208
+        ]
+      },
+      "baseline": "unmodified source, default target CPU",
+      "candidate": "H: compute c XOR d before combining latest b via register-only EOR asm; original rotate asm retained",
+      "postprocessing": "All 12 measurements completed; shell driver exited after timing when its source was edited. Summary regenerated from complete raw estimates using the same predeclared gates."
+    },
+    "abba-current-vs-md5": {
+      "cell_medians_ns": {
+        "A1": 1103655.346153846,
+        "B1": 1091562.9368421054,
+        "B2": 1090027.01981352,
+        "A2": 1105112.551640667
+      },
+      "baseline_drift": 0.0013203446999094925,
+      "candidate_variation": 0.001407080596771526,
+      "limit": 0.03,
+      "accepted": true,
+      "baseline_over_candidate": 1.0124578594872848,
+      "round_medians_ns": {
+        "A1": [
+          1103655.346153846,
+          1100221.92326546,
+          1103851.5591093118
+        ],
+        "B1": [
+          1093516.5394899216,
+          1091562.9368421054,
+          1089231.7280982905
+        ],
+        "B2": [
+          1091053.5386996903,
+          1090027.01981352,
+          1087592.5714285714
+        ],
+        "A2": [
+          1103644.1888374784,
+          1105280.7582417582,
+          1105112.551640667
+        ]
+      },
+      "baseline": "RustCrypto md-5 0.11.0",
+      "candidate": "unmodified md5-simd",
+      "same_binary": true
+    }
+  },
+  "diagnostics": {
+    "baseline": {
+      "description": "Original production kernel",
+      "kind": "sequential screening only, not promotion evidence",
+      "median_ns": {
+        "md5_simd": 1070736.111111111,
+        "md_5": 1086009.9571078431
+      },
+      "md_5_over_md5_simd": 1.014264808890103
+    },
+    "candidate": {
+      "description": "Three-instruction ADD/ROR/ADD island after precomputed a+message+K",
+      "kind": "sequential screening only, not promotion evidence",
+      "median_ns": {
+        "md5_simd": 1129852.0284780578,
+        "md_5": 1086664.754385965
+      },
+      "md_5_over_md5_simd": 0.9617761680259429
+    },
+    "add-boundary": {
+      "description": "Single ADD asm boundary, Rust rotate, split G terms",
+      "kind": "sequential screening only, not promotion evidence",
+      "median_ns": {
+        "md5_simd": 1071306.8042735043,
+        "md_5": 1085895.5567210568
+      },
+      "md_5_over_md5_simd": 1.0136177165956168
+    },
+    "h-xor": {
+      "description": "Precompute H c XOR d; asm EOR with latest b",
+      "kind": "sequential screening only, not promotion evidence",
+      "median_ns": {
+        "md5_simd": 1064473.6581018518,
+        "md_5": 1090123.4537037038
+      },
+      "md_5_over_md5_simd": 1.0240962239005427
+    },
+    "fh": {
+      "description": "H candidate plus forced XOR-select F",
+      "kind": "sequential screening only, not promotion evidence",
+      "median_ns": {
+        "md5_simd": 1071503.6022588522,
+        "md_5": 1100990.906084656
+      },
+      "md_5_over_md5_simd": 1.0275195564099282
+    },
+    "apple-m5": {
+      "description": "Original source with explicit -C target-cpu=apple-m5",
+      "kind": "sequential screening only, not promotion evidence",
+      "median_ns": {
+        "md5_simd": 1090947.6495726495,
+        "md_5": 1104931.8938271606
+      },
+      "md_5_over_md5_simd": 1.0128184374933014
+    }
+  },
+  "decision": "Keep original production kernel: H XOR candidate failed the predeclared 2% promotion threshold; other candidates showed no diagnostic reason for promotion.",
+  "compiler_cpu_probe": {
+    "hardware": "Apple M5 Max",
+    "rustc_native_cpu": "apple-m4",
+    "explicit_apple_m5_supported": true,
+    "decision": "Do not change default flags; explicit apple-m5 did not show a diagnostic improvement. No native-flag ABBA claim."
+  }
+}

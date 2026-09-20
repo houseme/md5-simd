@@ -93,8 +93,24 @@ input. `ABBA_BASELINE_FILTER` and `ABBA_CANDIDATE_FILTER` select other workloads
 `ABBA_DRIFT_LIMIT` must be chosen before a run.
 
 For a source refactor, build two immutable executables first and run those in
-ABBA order with identical benchmark IDs and features, as in this review. Avoid
-rebuilding or changing source between measured cells.
+ABBA order with identical benchmark IDs and features:
+
+```bash
+ABBA_BASELINE_BINARY=/path/to/before-bench \
+ABBA_CANDIDATE_BINARY=/path/to/after-bench \
+ABBA_BASELINE_FILTER='^oneshot/md5-simd\[single-aarch\(aarch64\)\]/1048576$' \
+ABBA_CANDIDATE_FILTER='^oneshot/md5-simd\[single-aarch\(aarch64\)\]/1048576$' \
+scripts/run_throughput_abba.sh "$PWD"
+```
+
+Both binary variables must be provided together; this mode skips Cargo. The
+script copies each executable into the fresh artifact directory before timing
+and records both hashes. Retain the original source revision, patch, compiler,
+features, flags, and lockfile for each external build; the runner's current
+compiler and lockfile do not establish how a prebuilt executable was produced.
+Avoid rebuilding or changing source between measured cells. A stable comparison
+against `md-5` does not establish an improvement over the previous implementation;
+that requires the before/after comparison above.
 
 `compare_1mib`, `checksum_profile`, and `probe` are diagnostic examples. Their
 sequential timing output has no ABBA drift gate and is not promotion evidence.
@@ -108,7 +124,7 @@ evidence; only ABBA cells that passed the 3% gates are claimed.
 ### x86_64 AMD EPYC (AVX2 + AVX-512), rustc 1.98.1, default features
 
 Backend: `single-asm(x86_64)`, batch `simd-avx512-fused`, lanes=16.
-Full-arch ABBA (2026-09-20) on `azure-401246254:/data/rustfs/md5-simd`.
+Full-arch ABBA (2026-09-20) on a native Linux x86_64 host.
 
 | Workload | Baseline | Candidate | Baseline / candidate | Gate |
 | --- | ---: | ---: | ---: | --- |
@@ -394,6 +410,72 @@ slower than the LLVM Rust+`ror` kernel (~82 ns vs ~52 ns compress×1).
 
 x86 Azure after the same tree: `single-asm` oneshot **~1.22×** md-5; stream
 **~1.19×**. Empty/short digest fast paths remain in place (round 6).
+
+## Single-message critical-path investigation (2026-09-20)
+
+The reported **0.997×** came from a sequential diagnostic: 1.085 ms for
+`md5-simd` and 1.082 ms for `md-5`. It was not an accepted ABBA regression.
+The ratio is `md-5 latency / md5-simd latency`, so that observation means a
+roughly 0.3% difference, not a missing SIMD backend.
+
+This investigation used the unmodified `8619868` production kernel on native
+Apple M5 Max, rustc 1.98.1 / LLVM 22.1.8, default features, release optimization,
+thin LTO, and one codegen unit. Each formal cell had three runs, 20 Criterion
+samples, 3 s measurement, 1 s warm-up, and 2 s cooldown. Before formal timing,
+the limits were fixed at 3% A1/A2 drift and B1/B2 variation, with at least a 2%
+before/after gain required to retain an additional assembly constraint.
+
+| Formal comparison | A1 / A2 | B1 / B2 | A / B | A drift / B variation |
+| --- | ---: | ---: | ---: | ---: |
+| Original kernel → H XOR candidate | 1.0935 / 1.0901 ms | 1.0816 / 1.0834 ms | **1.0086×** | 0.311% / 0.164% |
+| `md-5` → original kernel, same executable | 1.1037 / 1.1051 ms | 1.0916 / 1.0900 ms | **1.0125×** | 0.132% / 0.141% |
+
+Both stability gates passed. The candidate did **not** meet the promotion
+threshold and was reverted. The second row describes the original code; it is
+not a speedup introduced by this investigation. These are interactive desktop
+measurements without exclusive cores; the gates do not eliminate every source
+of interference or establish results for other AArch64 CPUs.
+
+Disassembly of the actual Criterion one-shot loop explains the narrow margin:
+
+- A 1 MiB message runs 16,384 complete blocks and one final padding block. Each
+  block depends on the preceding chaining state. The batch NEON kernel's
+  independent-message parallelism cannot remove that dependency.
+- The complete-block compression body is inlined; there is no per-block
+  indirect call. Removing final padding alone would save only approximately
+  1/16,385 of equal-cost compression work, about 0.006%.
+- LLVM already hoists most `old accumulator + message + K` additions away
+  from the newest round result. In G, BIC feeds the independent partial sum,
+  leaving AND, ADD, ROR, ADD on the newest-result path. A blanket assembly
+  boundary cannot recover work that is already scheduled independently.
+- In part of H, LLVM shares `b XOR c` with the following step, making the
+  latest `b` pass through two XORs. The candidate forced `c XOR d` first and
+  used a small EOR assembly boundary to prevent reassociation. That trades
+  fewer dependent XORs for less compiler freedom and different register/code
+  layout; the measured aggregate benefit was only 0.86%.
+
+Other candidates were screened in separate two-second diagnostic runs and
+were not promoted: a three-instruction ADD/ROR/ADD island took about 1.130 ms;
+an ADD-only boundary with split G terms took 1.071 ms; forced F XOR-select plus
+the H change took 1.072 ms. The original screen was 1.071 ms. These sequential
+screens are not controlled before/after gains and are not interchangeable with
+the formal ABBA timings above. The H candidate also passed the default suite
+and release differential tests, including the new long-message cases.
+
+The compiler reports `native` as `apple-m4` on this M5 Max and accepts an
+explicit `apple-m5`. A separate original-source build with
+`-C target-cpu=apple-m5` took about 1.091 ms in the diagnostic screen and did
+not justify changing default build flags. Hardware naming alone is not a
+performance result.
+
+Production compression remains unchanged. The retained changes are the
+two-executable ABBA runner and independent RustCrypto differential coverage for
+1 MiB messages at every u32 alignment, padding tails 0/55/56/63, and streaming
+through `Md5`, `Md5State`, and `DigestMd5`. Raw experiments remain local; the
+curated cell and round medians are in
+[`2026-09-20-aarch64-critical-path.json`](validation/2026-09-20-aarch64-critical-path.json).
+Further single-message candidates must beat this same-source before/after gate;
+batch throughput gains cannot be substituted for that evidence.
 
 ## Remaining limits
 
