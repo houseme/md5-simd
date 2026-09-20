@@ -19,6 +19,8 @@
   ABBA measured 2.40× versus sequential `md-5` with both stability gates passed.
 - Specialized the multi-group kernel for 2/3/4 groups without inlining the full
   compressor into the caller; fresh 16×1 MiB ABBA reached 4.22×.
+- Moved wide-SIMD integration tests to explicit 8 MiB test stacks so debug
+  x86_64 validation no longer fails from the test runner's default stack size.
 
 ## 0.1.0 — 2026-09-20
 

@@ -2,6 +2,15 @@
 
 use md5_simd::{Md5Engine, Md5State, digest, hex_encode};
 
+fn run_with_large_stack(test: fn()) {
+    std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(test)
+        .expect("spawn large-stack SIMD test")
+        .join()
+        .expect("large-stack SIMD test");
+}
+
 #[test]
 fn hash_many_matches_single() {
     let engine = Md5Engine::new();
@@ -109,6 +118,10 @@ fn hash_many_short_outputs_panics() {
 
 #[test]
 fn equal_runs_cover_lane_group_padding_and_alignment_boundaries() {
+    run_with_large_stack(equal_runs_cover_lane_group_padding_and_alignment_boundaries_body);
+}
+
+fn equal_runs_cover_lane_group_padding_and_alignment_boundaries_body() {
     use md5::Digest;
     let engine = Md5Engine::new();
     for count in [
@@ -141,6 +154,10 @@ fn equal_runs_cover_lane_group_padding_and_alignment_boundaries() {
 
 #[test]
 fn mixed_batch_preserves_equal_run_order_and_tail() {
+    run_with_large_stack(mixed_batch_preserves_equal_run_order_and_tail_body);
+}
+
+fn mixed_batch_preserves_equal_run_order_and_tail_body() {
     use md5::Digest;
     let lengths = [55, 56, 63, 64, 65, 127, 128, 129];
     let storage: Vec<Vec<u8>> = lengths
