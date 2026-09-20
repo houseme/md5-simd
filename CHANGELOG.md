@@ -4,6 +4,20 @@
 
 Initial release candidate.
 
+### Performance follow-up
+
+- Added `Md5Engine::hash_many_grouped` for object schedulers that need to group
+  non-adjacent equal-length messages while restoring caller output order.
+- Added AArch64 NEON multi-group shared-K scheduling and static 64-step expansion
+  to remove repeated constant broadcasts and runtime step control flow.
+- Unified `Md5State` and `DigestMd5` complete-block updates with the optimized
+  bulk paths while preserving portable fallbacks.
+- Added mixed-length, tail-batch, grouped-scheduler, and Digest streaming
+  benchmarks with same-host ABBA evidence.
+- Current Apple Silicon evidence shows about 3.10× for eight independent 1 MiB
+  messages and 2.35× for sixteen; single-message AArch64 remains near
+  RustCrypto `md-5` parity and is not advertised as a large speedup.
+
 ### APIs
 
 - One-shot MD5 and streaming `Md5` with independent clones, snapshots, and reset.

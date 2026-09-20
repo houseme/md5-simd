@@ -148,6 +148,24 @@ MD5 chain.
 `finalize_many` loop over independent scalar states; they are **not** incremental
 SIMD APIs. `Md5State::finalize()` is a non-consuming snapshot.
 
+### Measured AArch64 batch results
+
+On Apple Silicon, same-host ABBA measurements show the intended batch shape:
+
+| Workload | NEON result vs sequential `md-5` |
+| --- | ---: |
+| 8 independent × 1 MiB | **3.10×** |
+| 16 independent × 1 MiB | **2.35×** |
+| 7 independent × 1 MiB tail batch | **2.67×** |
+| 9 independent × 1 MiB with one scalar tail | **1.73×** |
+| grouped mixed lengths | **1.60×** |
+
+These are independent-message throughput results. A single MD5 message remains
+serial and is measured separately; current AArch64 single-message oneshot and
+streaming are approximately at RustCrypto `md-5` parity. For non-adjacent object
+sizes, `hash_many_grouped` can recover equal-length runs when its temporary sort
+and output scatter cost is justified.
+
 ## Features and portability
 
 | Feature | Default | Effect |
@@ -197,6 +215,7 @@ cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps
+cargo package --locked
 cargo run --release --example checksum_profile
 ```
 

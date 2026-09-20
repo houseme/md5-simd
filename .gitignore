@@ -49,3 +49,5 @@ lcov.info
 .claude/
 .codex/
 .agents/
+docs/plans
+docs/validation
