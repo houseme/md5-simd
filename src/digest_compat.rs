@@ -45,16 +45,9 @@ impl UpdateCore for Md5Core {
     #[inline]
     fn update_blocks(&mut self, blocks: &[Block<Self>]) {
         debug_assert_eq!(self.raw.buf_len, 0);
-        let mut state = self.raw.state;
-        for block in blocks {
-            let block: &[u8; 64] = block.as_slice().try_into().expect("MD5 block = 64 bytes");
-            backend::compress_block(&mut state, block);
-        }
-        self.raw.state = state;
-        self.raw.count = self
-            .raw
-            .count
-            .wrapping_add((blocks.len() as u64).wrapping_mul(64));
+        let data = Block::<Self>::slice_as_flattened(blocks);
+        backend::compress_blocks(&mut self.raw.state, data);
+        self.raw.count = self.raw.count.wrapping_add(data.len() as u64);
     }
 }
 

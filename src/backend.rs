@@ -11,16 +11,7 @@
 
 use crate::compress::{compress, compress_blocks_with, compress_textbook, state_to_bytes};
 use crate::consts::STATE_INIT;
-#[cfg(all(
-    feature = "opt",
-    not(feature = "force-portable"),
-    any(
-        target_arch = "x86_64",
-        all(target_arch = "aarch64", target_endian = "little")
-    )
-))]
-use crate::frame::build_final_blocks;
-use crate::frame::hash_with;
+use crate::frame::{build_final_blocks, hash_with};
 
 /// RFC 1321 digest of the empty message.
 #[inline]
@@ -96,13 +87,11 @@ pub fn hash(input: &[u8]) -> [u8; 16] {
         return empty_digest();
     }
     if input.len() <= 55 {
-        let mut block = [0u8; 64];
-        block[..input.len()].copy_from_slice(input);
-        block[input.len()] = 0x80;
-        let bit_len = (input.len() as u64).wrapping_mul(8).to_le_bytes();
-        block[56..64].copy_from_slice(&bit_len);
+        let mut blocks = [[0u8; 64]; 2];
+        let used = build_final_blocks(input.len() as u64, input, &mut blocks);
+        debug_assert_eq!(used, 1);
         let mut state = STATE_INIT;
-        compress_block(&mut state, &block);
+        compress_block(&mut state, &blocks[0]);
         return state_to_bytes(state);
     }
     if has_opt_kernel() && input.len() >= 64 {

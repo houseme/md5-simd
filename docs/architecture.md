@@ -63,7 +63,10 @@ The batch scheduler calls that backend for fallback messages. Feature `simd`
 does not enter this single-stream decision.
 
 `hash_many_dispatch` validates output capacity and groups adjacent equal-length
-inputs without allocation or reordering. `platform` chooses an available ISA.
+inputs without allocation or reordering. The `std`-only `Md5Engine::hash_many_grouped`
+entry point is an explicit scheduler option: it sorts temporary indices by
+length, dispatches grouped runs, and scatters results back to original order.
+`platform` chooses an available ISA.
 The same generic wide kernel is inlined into the x86 `target_feature` entries;
 removing that inlining can change AVX code generation significantly.
 

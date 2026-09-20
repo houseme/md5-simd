@@ -9,6 +9,8 @@ use crate::simd;
 use crate::state::Md5State;
 #[cfg(feature = "std")]
 use alloc::string::String;
+#[cfg(feature = "std")]
+use alloc::vec::Vec;
 
 /// Batch MD5 engine. Construct once and reuse.
 #[derive(Clone, Copy, Debug, Default)]
@@ -60,6 +62,55 @@ impl Md5Engine {
     #[inline]
     pub fn hash_many(self, inputs: &[&[u8]], outputs: &mut [[u8; 16]]) {
         simd::hash_many_dispatch(inputs, outputs);
+    }
+
+    /// Hash messages after grouping equal lengths while restoring output order.
+    ///
+    /// This is for callers that own an object scheduling queue and can pay one
+    /// allocation plus an index sort to expose non-adjacent equal-length runs.
+    /// The original [`Self::hash_many`] remains allocation-free and preserves
+    /// the input order during dispatch. Grouping is used only when the sorted
+    /// workload contains a SIMD-sized run; otherwise this falls back to
+    /// [`Self::hash_many`].
+    ///
+    /// # Panics
+    /// Panics if `outputs.len() < inputs.len()`.
+    #[cfg(feature = "std")]
+    pub fn hash_many_grouped(self, inputs: &[&[u8]], outputs: &mut [[u8; 16]]) {
+        assert!(
+            outputs.len() >= inputs.len(),
+            "outputs.len() ({}) < inputs.len() ({})",
+            outputs.len(),
+            inputs.len()
+        );
+        if inputs.len() < 4 || has_simd_sized_adjacent_run(inputs) {
+            self.hash_many(inputs, outputs);
+            return;
+        }
+
+        let mut order: Vec<usize> = (0..inputs.len()).collect();
+        order.sort_unstable_by_key(|&index| inputs[index].len());
+        let mut max_run = 1usize;
+        let mut run = 1usize;
+        for pair in order.windows(2) {
+            if inputs[pair[0]].len() == inputs[pair[1]].len() {
+                run += 1;
+                max_run = max_run.max(run);
+            } else {
+                run = 1;
+            }
+        }
+        if max_run < 4 {
+            self.hash_many(inputs, outputs);
+            return;
+        }
+
+        let sorted_inputs: Vec<&[u8]> = order.iter().map(|&index| inputs[index]).collect();
+        let mut sorted_outputs = vec![[0u8; 16]; inputs.len()];
+        self.hash_many(&sorted_inputs, &mut sorted_outputs);
+        for (sorted_index, &original_index) in order.iter().enumerate() {
+            outputs[original_index] = sorted_outputs[sorted_index];
+        }
     }
 
     /// Hash independent messages to lowercase hex (ETag-shaped).
@@ -121,6 +172,22 @@ impl Md5Engine {
     pub fn hasher(self) -> Md5 {
         Md5::new()
     }
+}
+
+#[cfg(feature = "std")]
+fn has_simd_sized_adjacent_run(inputs: &[&[u8]]) -> bool {
+    let mut run = 1usize;
+    for pair in inputs.windows(2) {
+        if pair[0].len() == pair[1].len() {
+            run += 1;
+            if run >= 4 {
+                return true;
+            }
+        } else {
+            run = 1;
+        }
+    }
+    false
 }
 
 /// Hash many independent messages with the process-default engine.

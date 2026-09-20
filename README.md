@@ -125,6 +125,12 @@ short messages, and unsupported targets use the active single-stream backend.
 Inputs need no special alignment. The caller supplies output storage, and the
 byte batch API performs no heap allocation or thread spawning.
 
+When an object scheduler has non-adjacent equal-size messages, the `std`
+feature also provides `Md5Engine::hash_many_grouped`. It sorts internal indices
+by message length, runs the same SIMD dispatcher, and scatters digests back to
+the original order. This method allocates temporary indices and digest storage;
+use it only when the expected SIMD work outweighs that scheduling cost.
+
 | Target | Batch selection with `simd` |
 | --- | --- |
 | x86_64 with `std` | Runtime detection: AVX2 (8 lanes), AVX-512F + AVX2 (16 lanes), or scalar |

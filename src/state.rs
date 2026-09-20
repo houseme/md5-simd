@@ -29,7 +29,7 @@ impl Md5State {
     /// Append bytes to this lane.
     #[inline]
     pub fn update(&mut self, input: &[u8]) {
-        self.raw.update(input, backend::compress_block);
+        self.raw.update_opt(input);
     }
 
     /// Snapshot digest; state is left unchanged.

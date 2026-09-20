@@ -157,3 +157,20 @@ fn mixed_batch_preserves_equal_run_order_and_tail() {
         assert_eq!(output.as_slice(), md5::Md5::digest(input).as_slice());
     }
 }
+
+#[cfg(feature = "std")]
+#[test]
+fn grouped_batch_restores_original_order() {
+    let lengths = [1024usize, 64, 1024, 32, 64, 1024, 32, 1024, 64, 32, 64, 32];
+    let storage: Vec<Vec<u8>> = lengths
+        .iter()
+        .enumerate()
+        .map(|(index, &len)| vec![(index as u8).wrapping_mul(17); len])
+        .collect();
+    let inputs: Vec<&[u8]> = storage.iter().map(Vec::as_slice).collect();
+    let mut outputs = vec![[0u8; 16]; inputs.len()];
+    Md5Engine::new().hash_many_grouped(&inputs, &mut outputs);
+    for (input, output) in inputs.iter().zip(outputs.iter()) {
+        assert_eq!(*output, digest(input));
+    }
+}

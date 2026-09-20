@@ -49,7 +49,7 @@ pub(crate) trait Wide {
 /// G uses the disjoint-mask add identity `(x&z)+(y&!z)` shared with the
 /// scalar production kernel (see `compress::mix_g`).
 #[inline(always)]
-fn wide_step<W: Wide>(v: &mut [W::V; 4], m: &[W::V; 16], step: usize) {
+fn wide_step_with_k<W: Wide>(v: &mut [W::V; 4], m: &[W::V; 16], step: usize, kv: W::V) {
     let dest = DEST[step & 3];
     let x = v[(dest + 1) & 3];
     let y = v[(dest + 2) & 3];
@@ -60,9 +60,13 @@ fn wide_step<W: Wide>(v: &mut [W::V; 4], m: &[W::V; 16], step: usize) {
         2 => W::xor(W::xor(x, y), z),
         _ => W::xor(y, W::or(x, W::not(z))),
     };
-    let kv = W::splat_ref(&K[step]);
     let t = W::add(W::add(W::add(v[dest], mix), kv), m[MSG[step]]);
     v[dest] = W::add(x, W::rotl(t, S[step]));
+}
+
+#[inline(always)]
+fn wide_step<W: Wide>(v: &mut [W::V; 4], m: &[W::V; 16], step: usize) {
+    wide_step_with_k::<W>(v, m, step, W::splat_ref(&K[step]));
 }
 
 /// 64-step MD5 compression — unrolled so `S[step]` is a literal.
@@ -213,11 +217,79 @@ fn compress_groups_interleaved<W: Wide>(
     debug_assert!(ngroups >= 2);
     let mut vs = [[W::splat(0); 4]; MAX_GROUPS];
     vs[..ngroups].copy_from_slice(&states[..ngroups]);
-    for step in 0..64 {
-        for g in 0..ngroups {
-            wide_step::<W>(&mut vs[g], &ms[g], step);
-        }
+    macro_rules! st {
+        ($step:literal) => {{
+            // One K broadcast serves every independent group in this block.
+            let kv = W::splat_ref(&K[$step]);
+            for g in 0..ngroups {
+                wide_step_with_k::<W>(&mut vs[g], &ms[g], $step, kv);
+            }
+        }};
     }
+    st!(0);
+    st!(1);
+    st!(2);
+    st!(3);
+    st!(4);
+    st!(5);
+    st!(6);
+    st!(7);
+    st!(8);
+    st!(9);
+    st!(10);
+    st!(11);
+    st!(12);
+    st!(13);
+    st!(14);
+    st!(15);
+    st!(16);
+    st!(17);
+    st!(18);
+    st!(19);
+    st!(20);
+    st!(21);
+    st!(22);
+    st!(23);
+    st!(24);
+    st!(25);
+    st!(26);
+    st!(27);
+    st!(28);
+    st!(29);
+    st!(30);
+    st!(31);
+    st!(32);
+    st!(33);
+    st!(34);
+    st!(35);
+    st!(36);
+    st!(37);
+    st!(38);
+    st!(39);
+    st!(40);
+    st!(41);
+    st!(42);
+    st!(43);
+    st!(44);
+    st!(45);
+    st!(46);
+    st!(47);
+    st!(48);
+    st!(49);
+    st!(50);
+    st!(51);
+    st!(52);
+    st!(53);
+    st!(54);
+    st!(55);
+    st!(56);
+    st!(57);
+    st!(58);
+    st!(59);
+    st!(60);
+    st!(61);
+    st!(62);
+    st!(63);
     for g in 0..ngroups {
         states[g][0] = W::add(vs[g][0], states[g][0]);
         states[g][1] = W::add(vs[g][1], states[g][1]);
@@ -267,8 +339,9 @@ pub(crate) fn hash_equal_wide<W: Wide>(inputs: &[&[u8]], outputs: &mut [[u8; 16]
                 let m = unsafe { W::gather_block(&ptrs, n) };
                 compress_wide::<W>(&mut states[0], &m);
             }
-        } else if prefer_group_interleave() && ngroups >= 3 {
-            // aarch64 NEON only: interleave chains + pipeline next gather.
+        } else if prefer_group_interleave() && ngroups >= 2 {
+            // aarch64 NEON only: share K broadcasts across groups, and for
+            // three or more groups also interleave chains + pipeline gather.
             // SAFETY: block 0 is a complete 64-byte block in every lane.
             let mut cur = unsafe { gather_groups_at::<W>(inputs, 0, n, lanes, ngroups) };
             for bi in 0..nfull {

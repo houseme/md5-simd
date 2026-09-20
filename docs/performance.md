@@ -177,6 +177,153 @@ lengthen the MD5 critical path versus LLVM’s register-allocated Rust schedule
 with immediate `K` folds. The experiment was **reverted**; default aarch64
 `opt` remains the fast-md5-adapted Rust + per-round `ror` kernel.
 
+### 2026-09-20 candidate — two-step rodata-K lookahead (rejected)
+
+The candidate kept `a/b/c/d` across a multi-block loop, loaded `K` through a
+read-only table pointer, and kept two `message + K` values in scratch registers.
+Its benchmark-only wrapper was never connected to production dispatch. It passed
+the registered boundary differential checks before timing, including all current
+oneshot lengths and the independent RustCrypto `md-5` oracle.
+
+Two same-host ABBA campaigns used three rounds per cell, 20 Criterion samples,
+three seconds of measurement, one second warm-up, two seconds cooldown, and a
+3% stability gate. Both campaigns were stable, but the candidate regressed:
+
+| Comparison | A1/A2 median | B1/B2 median | Baseline / candidate | Decision |
+| --- | ---: | ---: | ---: | --- |
+| `md-5` → candidate | 1.067 ms / 1.067 ms | 1.156 ms / 1.157 ms | **0.923×** | reject |
+| current `single-aarch` → candidate | 1.056 ms / 1.056 ms | 1.157 ms / 1.156 ms | **0.913×** | reject |
+
+The detailed, sanitized measurements are in
+[`2026-09-20-aarch64-candidate-abba.json`](validation/2026-09-20-aarch64-candidate-abba.json).
+The result confirms that removing per-round immediate materialization in the
+source is insufficient by itself; the extra loads and register pressure cost
+more than the candidate saves. No aarch64 1 MiB speedup is claimed.
+
+### ISA feasibility check — no AArch64 MD5 instruction backend
+
+The requested `md5h`/`md5m`/`md5p`/`md5im` route was checked against the current
+AArch64 toolchain and host. Rust's target-feature inventory exposes no `md5`
+feature, and the Apple/LLVM assembler rejects all four mnemonics. The official
+A64 cryptography instruction set documents SHA1/SHA2 and related extensions,
+not an MD5 extension. The probe is recorded in
+[`2026-09-20-aarch64-md5-isa-probe.json`](validation/2026-09-20-aarch64-md5-isa-probe.json).
+
+No raw instruction encodings were guessed or added. A real hardware/vendor
+extension, independent-message NEON/SVE batching, or another architecture is
+required before an ISA-level MD5 backend can be implemented honestly.
+
+### 2026-09-20 NEON8 batch ABBA — accepted
+
+The supported AArch64 route for independent messages already provides a large
+lead. On the same native host, eight independent equal-length 1 MiB messages
+were measured with A1→B1→B2→A2, three rounds per cell, 20 samples per round,
+five seconds measurement, one second warm-up, two seconds cooldown, and a 3%
+stability gate:
+
+| Baseline | Candidate | Baseline / candidate | A drift | B variation |
+| --- | --- | ---: | ---: | ---: |
+| sequential RustCrypto `md-5` | fused NEON8 `hash_many` | **3.104×** | 0.61% | 0.46% |
+
+The baseline cell medians were 8.81/8.86 ms and candidate medians were
+2.84/2.85 ms. This is an accepted throughput result for eight independent
+messages; it is not a single-message 1 MiB latency claim. The sanitized data
+is in [`2026-09-20-neon8-8x1mib-abba.json`](validation/2026-09-20-neon8-8x1mib-abba.json).
+
+### Mixed lengths, tail batches, and irregular object schedules
+
+The same ABBA procedure was applied to scheduler-shaped inputs:
+
+| Workload | Shape | Baseline / NEON candidate | Gate |
+| --- | --- | ---: | --- |
+| `tail_7x1mib` | seven messages, below NEON8 width | **2.670×** | accepted |
+| `tail_9x1mib` | eight-message vector group plus one scalar tail | **1.733×** | accepted |
+| `grouped_mix` | four 1 MiB, four 64 KiB, four 32 KiB, four 128 KiB | **1.602×** | accepted |
+| `object_mix_irregular` | realistic non-repeating object sizes | **1.013×** | accepted parity |
+
+The result shows the scheduling boundary clearly: adjacent equal-length runs
+retain a large NEON lead, while mostly singleton lengths cannot be fused and
+remain near sequential `md-5`. Full sanitized measurements are in
+[`2026-09-20-schedule-abba.json`](validation/2026-09-20-schedule-abba.json).
+
+The explicit `hash_many_grouped` scheduler recovers that batching opportunity
+for non-adjacent repeated sizes: an object sequence with four repeated 1 MiB,
+64 KiB, and 32 KiB groups reached **1.632×** versus sequential `md-5` after
+sorting temporary indices and scattering outputs back to their original order.
+This is an opt-in allocation/scheduling tradeoff, not a change to the
+allocation-free `hash_many` contract.
+
+### NEON multi-group root cause: repeated K broadcasts
+
+The wide AArch64 step previously loaded and broadcast `K[step]` separately for
+each active SIMD group. That cost is invisible for one NEON8 group, but appears
+when a grouped scheduler produces 12–32 messages. The kernel now computes one
+vector K value per step and reuses it across groups; the shared-K path applies
+to two or more AArch64 groups.
+
+The repaired path passed a fresh 5-second ABBA campaign at **1.593×** versus
+sequential `md-5` for the reorderable object schedule. This confirms stable
+batch performance, but the campaign does not isolate the K-sharing delta from
+the previous grouped campaign, so no independent percentage improvement is
+claimed. See [`2026-09-20-neon-k-broadcast.json`](validation/2026-09-20-neon-k-broadcast.json).
+
+The multi-group step loop is now statically expanded to match the single-group
+kernel. A fresh ABBA for the same reorderable object schedule measured **1.624×**
+versus sequential `md-5` with both drift gates accepted. This is directional
+evidence for removing runtime step control flow; it is not an isolated delta
+against the prior campaign. See
+[`2026-09-20-neon-multigroup-unrolled.json`](validation/2026-09-20-neon-multigroup-unrolled.json).
+
+A direct two-group workload, 16 independent 1 MiB messages, passed a fresh
+5-second ABBA at **2.346×** versus sequential `md-5` (A drift 0.059%, B
+variation 0.810%). Evidence: [`2026-09-20-neon16-16x1mib-abba.json`](validation/2026-09-20-neon16-16x1mib-abba.json).
+
+### Root-cause matrix: why SIMD can appear to have no advantage
+
+The focused AArch64 matrix shows that NEON is faster whenever work reaches the
+fused kernel: 4×64 B is about **1.55×**, 8×64 B about **2.42×**, 8×1 KiB about
+**2.98×**, 8×64 KiB about **3.03×**, and 16×1 KiB about **3.50×** versus
+sequential `md5-simd` digest. The complete diagnostic medians are in
+[`2026-09-20-neon-root-cause-matrix.json`](validation/2026-09-20-neon-root-cause-matrix.json).
+
+The apparent no-advantage cases have separate causes: a single message is
+serial by definition; `pick_batch` rejects too-small or too-short work; the
+original scheduler only fused adjacent equal lengths; underfull tails waste
+lanes or run scalar; and gather/transpose/padding costs dominate tiny inputs.
+The grouped scheduler and shared-K multi-group repair address the two software
+causes without changing the zero-allocation default API.
+
+### Single-message endpoint path diagnosis
+
+A fresh release diagnostic measured 1 MiB oneshot at 1.085 ms for the active
+backend and 1.082 ms for RustCrypto `md-5`; 4 KiB streaming measured 1.082 ms
+and 1.084 ms respectively. The active path is only about 0.8% faster than the
+in-tree kernel, and its complete-block loop already calls the monomorphic
+single-stream transform directly. There is no remaining generic `FnMut` call in
+that hot loop, and a 1 MiB input needs only one final padding block.
+
+This rules out another padding or wrapper fast path as the main fix. The
+remaining single-message gap is the instruction schedule/code generation of two
+similar scalar AArch64 MD5 kernels. Future single-message work needs a new
+compiler/backend or real ISA direction; the measured endpoint evidence is in
+[`2026-09-20-aarch64-endpoint-path.json`](validation/2026-09-20-aarch64-endpoint-path.json).
+
+### R3 follow-up: message preload and API bulk paths
+
+A state-retaining multi-block loop was rejected after a diagnostic 1 MiB result
+of about 1.196 ms versus about 1.143 ms for the original path; the larger
+inlined loop increased register pressure. A second candidate preloaded all 16
+message words once per block. Its accepted ABBA cell was **1.0113×** against
+`md-5`, while the same-window original path was **1.0126×**; this is not a
+promotion and the candidate was reverted.
+
+The retained code change routes `Md5State` through the existing `update_opt`
+state machine and lets `DigestMd5` flatten its complete block slice before
+calling the shared block entry point. A new 1 MiB Digest streaming diagnostic
+measured 1.1222 ms for `md5-simd` versus 1.1227 ms for `md-5`, which is parity,
+not a performance claim. Detailed sanitized data is in
+[`2026-09-20-r3-aarch64.json`](validation/2026-09-20-r3-aarch64.json).
+
 ### What changed in the kernels
 
 - Scalar production `mix_g` uses `(x&z)+(y&!z)`; multi-block loops prefetch

@@ -13,7 +13,7 @@
 //! ```
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use md5_simd::{Md5, Md5Engine, backend_name, digest};
+use md5_simd::{DigestMd5, Md5, Md5Engine, backend_name, digest};
 use std::hint::black_box;
 
 fn ref_md5(data: &[u8]) -> [u8; 16] {
@@ -74,6 +74,35 @@ fn bench_streaming(c: &mut Criterion) {
                     h.update(chunk);
                 }
                 h.finalize()
+            })
+        });
+    }
+    group.finish();
+}
+
+fn bench_digest_streaming(c: &mut Criterion) {
+    use md5_simd::Digest as _;
+    let mut group = c.benchmark_group("digest_streaming_4k_chunks");
+    for &len in &[64usize, 1024, 64 * 1024, 1024 * 1024] {
+        let data = pattern(len);
+        group.throughput(Throughput::Bytes(len as u64));
+        group.bench_with_input(BenchmarkId::new("md5-simd", len), &data, |b, data| {
+            b.iter(|| {
+                let mut h = DigestMd5::new();
+                for chunk in black_box(data).chunks(4096) {
+                    h.update(chunk);
+                }
+                black_box(h.finalize())
+            })
+        });
+        group.bench_with_input(BenchmarkId::new("md-5", len), &data, |b, data| {
+            b.iter(|| {
+                use md5::Digest;
+                let mut h = md5::Md5::new();
+                for chunk in black_box(data).chunks(4096) {
+                    h.update(chunk);
+                }
+                black_box(h.finalize())
             })
         });
     }
@@ -145,6 +174,123 @@ fn bench_hash_many(c: &mut Criterion) {
     bench_hash_many_n::<64>(c);
 }
 
+fn bench_hash_many_schedules(c: &mut Criterion) {
+    let engine = Md5Engine::new();
+    let schedules: &[(&str, &[usize])] = &[
+        ("tail_7x1mib", &[1024 * 1024; 7]),
+        ("tail_9x1mib", &[1024 * 1024; 9]),
+        (
+            "grouped_mix",
+            &[
+                1024 * 1024,
+                1024 * 1024,
+                1024 * 1024,
+                1024 * 1024,
+                64 * 1024,
+                64 * 1024,
+                64 * 1024,
+                64 * 1024,
+                32 * 1024,
+                32 * 1024,
+                32 * 1024,
+                32 * 1024,
+                128 * 1024,
+                128 * 1024,
+                128 * 1024,
+                128 * 1024,
+            ],
+        ),
+        (
+            "object_mix_irregular",
+            &[
+                8 * 1024,
+                32 * 1024,
+                128 * 1024,
+                1024 * 1024,
+                64 * 1024,
+                256 * 1024,
+                1024 * 1024,
+                32 * 1024,
+                1024 * 1024,
+                128 * 1024,
+                64 * 1024,
+                512 * 1024,
+            ],
+        ),
+        (
+            "object_mix_reorderable",
+            &[
+                1024 * 1024,
+                64 * 1024,
+                1024 * 1024,
+                32 * 1024,
+                64 * 1024,
+                1024 * 1024,
+                32 * 1024,
+                1024 * 1024,
+                64 * 1024,
+                32 * 1024,
+                64 * 1024,
+                32 * 1024,
+            ],
+        ),
+    ];
+
+    let mut group = c.benchmark_group("hash_many_schedules");
+    for &(name, lengths) in schedules {
+        let storage: Vec<Vec<u8>> = lengths
+            .iter()
+            .enumerate()
+            .map(|(index, &len)| {
+                pattern(len)
+                    .into_iter()
+                    .map(|byte| byte.wrapping_add(index as u8))
+                    .collect()
+            })
+            .collect();
+        let inputs: Vec<&[u8]> = storage.iter().map(Vec::as_slice).collect();
+        let mut outputs = vec![[0u8; 16]; inputs.len()];
+        let total_bytes: usize = lengths.iter().sum();
+        group.throughput(Throughput::Bytes(total_bytes as u64));
+
+        group.bench_with_input(
+            BenchmarkId::new(format!("md5-simd/{name}"), total_bytes),
+            &inputs,
+            |b, inputs| {
+                b.iter(|| {
+                    engine.hash_many(black_box(inputs), &mut outputs);
+                    black_box(outputs[0])
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new(format!("sequential-md-5/{name}"), total_bytes),
+            &inputs,
+            |b, inputs| {
+                b.iter(|| {
+                    for (input, output) in inputs.iter().zip(outputs.iter_mut()) {
+                        *output = ref_md5(black_box(input));
+                    }
+                    black_box(outputs[0])
+                })
+            },
+        );
+        if name == "object_mix_reorderable" {
+            group.bench_with_input(
+                BenchmarkId::new("md5-simd-grouped/object_mix_reorderable", total_bytes),
+                &inputs,
+                |b, inputs| {
+                    b.iter(|| {
+                        engine.hash_many_grouped(black_box(inputs), &mut outputs);
+                        black_box(outputs[0])
+                    })
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
 fn bench_pair(c: &mut Criterion) {
     if !md5_simd::pair_path_active() {
         return;
@@ -178,7 +324,9 @@ criterion_group!(
     benches,
     bench_oneshot,
     bench_streaming,
+    bench_digest_streaming,
     bench_hash_many,
+    bench_hash_many_schedules,
     bench_pair
 );
 criterion_main!(benches);

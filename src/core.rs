@@ -1,6 +1,15 @@
 //! Shared hasher state machine used by `Md5` and `Md5State`.
 
-use crate::compress::{compress_blocks_with, iv};
+#[cfg(not(all(
+    feature = "opt",
+    not(feature = "force-portable"),
+    any(
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_endian = "little")
+    )
+)))]
+use crate::compress::compress_blocks_with;
+use crate::compress::iv;
 use crate::frame::finalize_with;
 
 /// Raw MD5 state: IV words + partial block buffer + byte count.
@@ -44,14 +53,17 @@ impl Raw {
         }
     }
 
-    /// Absorb bytes through the active block kernel.
+    #[cfg(not(all(
+        feature = "opt",
+        not(feature = "force-portable"),
+        any(
+            target_arch = "x86_64",
+            all(target_arch = "aarch64", target_endian = "little")
+        )
+    )))]
     #[inline(always)]
-    pub fn update<F>(&mut self, mut data: &[u8], mut compress: F)
-    where
-        F: FnMut(&mut [u32; 4], &[u8; 64]),
-    {
+    fn update(&mut self, mut data: &[u8], mut compress: impl FnMut(&mut [u32; 4], &[u8; 64])) {
         self.count = self.count.wrapping_add(data.len() as u64);
-
         if self.buf_len > 0 {
             let have = self.buf_len as usize;
             let take = (64 - have).min(data.len());
@@ -66,13 +78,11 @@ impl Raw {
                 return;
             }
         }
-
         if data.len() >= 64 {
             let full = data.len() & !63;
             compress_blocks_with(&mut self.state, &data[..full], &mut compress);
             data = &data[full..];
         }
-
         if !data.is_empty() {
             self.buf[..data.len()].copy_from_slice(data);
             self.buf_len = data.len() as u32;
