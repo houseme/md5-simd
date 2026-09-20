@@ -1,8 +1,6 @@
 # Changelog
 
-## 0.1.0 — Unreleased
-
-Initial release candidate.
+## 0.2.0 — Unreleased
 
 ### Performance follow-up
 
@@ -17,6 +15,10 @@ Initial release candidate.
 - Current Apple Silicon evidence shows about 3.10× for eight independent 1 MiB
   messages and 2.35× for sixteen; single-message AArch64 remains near
   RustCrypto `md-5` parity and is not advertised as a large speedup.
+
+## 0.1.0 — 2026-09-20
+
+Initial release candidate.
 
 ### APIs
 
