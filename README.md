@@ -161,6 +161,10 @@ for round in 0..4 {
 assert!(states.iter().all(|s| s.finalize() == digest(&uploads[0])));
 ```
 
+`examples/streaming_uploads.rs` is the full server loop (admit uploads, one chunk
+per upload per tick, retire finished ones) with throughput against per-upload
+updates: `cargo run --release --example streaming_uploads`.
+
 With `simd`, streams that hold complete blocks share SIMD registers. Streams need
 not be equally long, block-aligned, or all supplied with data in a call: each is
 first brought to a block boundary, then every stream that still has a complete

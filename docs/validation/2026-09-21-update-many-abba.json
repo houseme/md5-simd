@@ -68,10 +68,17 @@
       "workload": "update_many_16x1mib/65536",
       "baseline": "sequential Md5State::update (single-asm)",
       "candidate": "update_many (AVX2)",
-      "baseline_drift": 0.0002963417344526986,
-      "candidate_variation": 0.0017931469243166465,
+      "baseline_drift": 0.0007029406891417844,
+      "candidate_variation": 0.0007456325195839275,
       "accepted_stability": true,
-      "baseline_over_candidate": 4.693719407655499
+      "baseline_over_candidate": 5.466686198914503,
+      "cells_ns": {
+        "A1": 16701640.762867648,
+        "B1": 3055232.511965812,
+        "B2": 3052954.4312500004,
+        "A2": 16689900.5
+      },
+      "note": "one-group incremental window (final); the four-group window measured 4.694x"
     },
     {
       "target": "x86_64-unknown-linux-gnu",
@@ -105,8 +112,42 @@
       "candidate_variation": 0.002918333231745285,
       "accepted_stability": true,
       "baseline_over_candidate": 1.0006663115712213
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "host": "Intel Core i7-9700 (AVX2), pinned to one core",
+      "workload": "update_many_16x1mib/65536",
+      "baseline": "four-group incremental window binary",
+      "candidate": "one-group incremental window binary, same benchmark id",
+      "cells_ns": {
+        "A1": 3570007.779040404,
+        "B1": 3048382.8916666666,
+        "B2": 3044235.5892857146,
+        "A2": 3572468.0625
+      },
+      "baseline_drift": 0.0006891535290316497,
+      "candidate_variation": 0.0013604926048789157,
+      "accepted_stability": true,
+      "baseline_over_candidate": 1.1723162813936632
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "host": "Intel Core i7-9700 (AVX2), pinned to one core",
+      "workload": "update_many_32x1mib/65536",
+      "baseline": "four-group incremental window binary",
+      "candidate": "one-group incremental window binary, same benchmark id",
+      "cells_ns": {
+        "A1": 7250958.157142857,
+        "B1": 6191690.35,
+        "B2": 6183837.411111111,
+        "A2": 7267340.045454545
+      },
+      "baseline_drift": 0.0022592722170862167,
+      "candidate_variation": 0.001268302910026664,
+      "accepted_stability": true,
+      "baseline_over_candidate": 1.1731457827778253
     }
   ],
   "not_covered": "AVX-512: compiled (x86_64 cross-check) but not executed on AVX-512 hardware for this change.",
-  "conclusion": "Accepted. update_many gains 2.9-5.6x over per-stream updates once four or more streams hold complete blocks; the one-shot hash_many path is unchanged."
+  "conclusion": "Accepted. update_many gains 2.9-5.6x over per-stream updates once four or more streams hold complete blocks; the one-shot hash_many path is unchanged. On x86_64 a one-group incremental window is 1.17x faster than a four-group one."
 }

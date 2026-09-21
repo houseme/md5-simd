@@ -62,8 +62,10 @@ aarch64 `opt` (`single_aarch`, adapted from fast-md5), then portable Rust.
 The batch scheduler calls that backend for fallback messages. Feature `simd`
 does not enter this single-stream decision.
 
-`update_many_dispatch` is the incremental scheduler. It works on windows of at
-most `lanes × MAX_GROUPS` streams without allocating. Within a window it first
+`update_many_dispatch` is the incremental scheduler. It works on windows of
+`lanes × MAX_GROUPS` streams on aarch64 and `lanes` streams on x86_64 (where
+groups are compressed sequentially and a wider window only hurts locality),
+without allocating. Within a window it first
 completes every partial block on the single-stream backend, then repeatedly
 selects the streams that still hold a complete block and advances them over the
 block count they have in common through `platform::update_equal_n`, until fewer

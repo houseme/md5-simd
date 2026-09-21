@@ -73,6 +73,10 @@ name = "multi"
 required-features = ["std"]
 
 [[example]]
+name = "streaming_uploads"
+required-features = ["std"]
+
+[[example]]
 name = "probe"
 required-features = ["std"]
 

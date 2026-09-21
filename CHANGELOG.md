@@ -12,7 +12,9 @@
 - Same-host ABBA against updating the same `Md5State`s one by one (64 KiB chunks,
   1 MiB per stream): Apple Silicon NEON 3.11× (8 streams) and 4.10× (16);
   Intel Core i7-9700 AVX2, against the x86_64 assembly backend, 2.92× (4),
-  5.64× (8) and 4.69× (16).
+  5.64× (8) and 5.47× (16).
+- x86_64 incremental windows hold one SIMD group; ABBA against the four-group
+  window measured 1.17× at 16 and 32 streams on AVX2.
 - `hash_equal_wide` and the new `update_equal_wide` share one full-block loop.
   ABBA of `hash_many_equal_16/1048576` before and after the extraction:
   1.005× on Apple Silicon, 1.001× on i7-9700 (no change).
@@ -23,6 +25,9 @@
   chunking, more streams than one scheduling window, and mixed single/batch
   updates, all against RustCrypto `md-5`.
 - Added the `update_many_{4,8,16,32}x1mib` Criterion groups.
+- Added `examples/streaming_uploads.rs`: the server loop for hashing uploads in
+  flight (admit, one chunk per upload per tick, `update_many`, retire), timed
+  against per-upload updates with every digest checked.
 
 ## 0.2.0 — 2026-09-20
 

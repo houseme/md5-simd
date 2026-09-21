@@ -184,9 +184,23 @@ pub fn update_many_dispatch(states: &mut [Md5State], inputs: &[&[u8]]) {
         return;
     }
 
-    let window = max * MAX_GROUPS;
+    let window = max * update_groups_per_window();
     for (states, inputs) in states.chunks_mut(window).zip(inputs.chunks(window)) {
         update_window(states, inputs, max);
+    }
+}
+
+/// SIMD groups one incremental window spans.
+///
+/// aarch64 interleaves the 64-step chains of several groups, so wider windows are
+/// faster there. x86 compresses the groups of a block one after the other, which
+/// buys nothing over separate calls and makes every block touch twice as many
+/// streams; one group per window measured faster on AVX2 (see `docs/performance.md`).
+const fn update_groups_per_window() -> usize {
+    if cfg!(target_arch = "x86_64") {
+        1
+    } else {
+        MAX_GROUPS
     }
 }
 

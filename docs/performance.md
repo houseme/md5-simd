@@ -504,13 +504,36 @@ on the active single-stream backend (assembly on x86_64).
 | Apple Silicon, NEON8 | 16 × 64 KiB | **4.10×** | accepted |
 | Intel Core i7-9700, AVX2 | 4 × 64 KiB | **2.92×** | accepted |
 | Intel Core i7-9700, AVX2 | 8 × 64 KiB | **5.64×** | accepted |
-| Intel Core i7-9700, AVX2 | 16 × 64 KiB | **4.69×** | accepted |
+| Intel Core i7-9700, AVX2 | 16 × 64 KiB | **5.47×** | accepted |
 
 All cells: A1→B1→B2→A2, 3 rounds × 20 samples, 3 s measurement, 1 s warm-up, 2 s
 cooldown, 3% drift gate; the i7-9700 runs were pinned to one core. Extracting the
 shared full-block loop left `hash_many_equal_16/1048576` unchanged (1.005× and
 1.001× before/after on the two hosts). AVX-512 was cross-compiled and is covered by
 the same generic kernel, but this change was **not executed on AVX-512 hardware**.
+
+On x86_64 an incremental window holds one SIMD group. x86 compresses the groups of
+a block one after the other, so a wider window gains nothing over separate calls
+and makes every block touch twice as many streams. Same-host ABBA of the
+four-group window against the one-group window on the i7-9700: **1.172×** at 16
+streams and **1.173×** at 32 (both accepted); 16 streams went from 4.69× to 5.47×
+over sequential updates. aarch64 interleaves the chains of several groups and
+keeps the four-group window.
+
+`examples/streaming_uploads.rs` drives a server-shaped workload (192 uploads of
+2–6 MiB plus some tiny ones, 256 KiB chunks, periodic stalls, uploads admitted and
+retired as they complete) and checks every digest:
+
+| Uploads in flight | Apple Silicon | i7-9700 |
+| ---: | ---: | ---: |
+| 4 | 1.21× | 1.43× |
+| 8 | 2.55× | 4.41× |
+| 16 | 3.56× | 4.38× |
+| 32 | 4.90× | 4.35× |
+| 64 | 4.92× | 4.39× |
+
+These are single runs of the example, not ABBA cells; they show the shape, the
+ABBA table above carries the claim.
 
 These are aggregate-throughput results for independent streams. They say nothing
 about single-message latency, and the gain disappears when fewer than four streams
