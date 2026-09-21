@@ -5,7 +5,7 @@
 //! wide.rs                            fused multi-buffer kernel
 //! neon / neon8 / avx2 / avx512       batch ISA adapters
 //! platform.rs                        CPUID + equal-length dispatch
-//! mod.rs                             hash_many scheduler
+//! mod.rs                             hash_many + update_many schedulers
 //! ```
 //!
 //! Single-stream uses `opt` on x86_64 (asm) and little-endian aarch64
@@ -14,7 +14,10 @@
 
 use crate::backend;
 use crate::multibuf;
+use crate::state::Md5State;
 const MAX_GROUPS: usize = 4;
+/// Most streams one fused kernel call accepts (widest register × `MAX_GROUPS`).
+const MAX_BATCH: usize = 16 * MAX_GROUPS;
 
 mod platform;
 #[cfg(all(
@@ -149,6 +152,117 @@ pub fn hash_many_dispatch(inputs: &[&[u8]], outputs: &mut [[u8; 16]]) {
             }
         }
         i += run;
+    }
+}
+
+/// Append `inputs[i]` to `states[i]`, sharing SIMD registers between streams.
+///
+/// Streams need not be aligned, equally long, or all have data. Each stream is
+/// first brought to a block boundary on the single-stream backend. Then, while
+/// at least four streams still hold a complete block, those streams advance
+/// together over the block count they have in common; a stream that runs out
+/// simply leaves the batch. Everything left over (tails, or fewer than four
+/// streams) goes through the single-stream backend, so no input shape is slower
+/// than the scalar loop this replaces.
+///
+/// # Panics
+/// Panics if `states.len() != inputs.len()`.
+pub fn update_many_dispatch(states: &mut [Md5State], inputs: &[&[u8]]) {
+    assert_eq!(
+        states.len(),
+        inputs.len(),
+        "states.len() ({}) != inputs.len() ({})",
+        states.len(),
+        inputs.len()
+    );
+
+    let max = platform::lanes();
+    if pick_batch(states.len(), max, 64) == 0 {
+        for (state, input) in states.iter_mut().zip(inputs) {
+            state.update(input);
+        }
+        return;
+    }
+
+    let window = max * update_groups_per_window();
+    for (states, inputs) in states.chunks_mut(window).zip(inputs.chunks(window)) {
+        update_window(states, inputs, max);
+    }
+}
+
+/// SIMD groups one incremental window spans.
+///
+/// aarch64 interleaves the 64-step chains of several groups, so wider windows are
+/// faster there. x86 compresses the groups of a block one after the other, which
+/// buys nothing over separate calls and makes every block touch twice as many
+/// streams; one group per window measured faster on AVX2 (see `docs/performance.md`).
+const fn update_groups_per_window() -> usize {
+    if cfg!(target_arch = "x86_64") {
+        1
+    } else {
+        MAX_GROUPS
+    }
+}
+
+/// One scheduling window of at most `max * MAX_GROUPS` streams.
+fn update_window(states: &mut [Md5State], inputs: &[&[u8]], max: usize) {
+    let n = states.len();
+    debug_assert!(n <= MAX_BATCH);
+
+    // Bring every stream to a block boundary. A stream whose buffer is still
+    // partial afterwards has no input left, so `rest` alone decides liveness.
+    let mut rest: [&[u8]; MAX_BATCH] = [&[]; MAX_BATCH];
+    for ((state, input), rest) in states.iter_mut().zip(inputs).zip(&mut rest) {
+        let raw = state.raw_mut();
+        let head = if raw.buf_len == 0 {
+            0
+        } else {
+            (64 - raw.buf_len as usize).min(input.len())
+        };
+        raw.update_opt(&input[..head]);
+        *rest = &input[head..];
+    }
+
+    let mut live = [0usize; MAX_BATCH];
+    let mut chain = [[0u32; 4]; MAX_BATCH];
+    loop {
+        let mut n_live = 0;
+        let mut nblocks = usize::MAX;
+        for (i, rest) in rest[..n].iter().enumerate() {
+            let blocks = rest.len() / 64;
+            if blocks != 0 {
+                live[n_live] = i;
+                n_live += 1;
+                nblocks = nblocks.min(blocks);
+            }
+        }
+        let batch = pick_batch(n_live, max, 64);
+        if batch == 0 {
+            break;
+        }
+        debug_assert_eq!(batch, n_live);
+
+        let mut blocks: [&[u8]; MAX_BATCH] = [&[]; MAX_BATCH];
+        for (slot, &i) in live[..batch].iter().enumerate() {
+            chain[slot] = states[i].raw_mut().state;
+            blocks[slot] = rest[i];
+        }
+        if !platform::update_equal_n(&mut chain[..batch], &blocks[..batch], nblocks) {
+            break;
+        }
+        let advanced = nblocks * 64;
+        for (slot, &i) in live[..batch].iter().enumerate() {
+            let raw = states[i].raw_mut();
+            raw.state = chain[slot];
+            raw.count = raw.count.wrapping_add(advanced as u64);
+            rest[i] = &rest[i][advanced..];
+        }
+    }
+
+    for (state, rest) in states.iter_mut().zip(rest) {
+        if !rest.is_empty() {
+            state.raw_mut().update_opt(rest);
+        }
     }
 }
 

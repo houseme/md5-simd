@@ -3,7 +3,9 @@
 //! ```text
 //! Wide trait      ISA vector ops + gather_block (hardware transpose when available)
 //! compress_wide   unrolled 64-step (consts::{K,S,MSG,DEST})
-//! hash_equal_wide fused equal-length groups (n may exceed LANES)
+//! compress_full_blocks  the one full-block loop (any starting chaining values)
+//! hash_equal_wide       one-shot: IV -> full blocks -> padding -> digests
+//! update_equal_wide     incremental: caller chaining values in and out, no padding
 //! ```
 //!
 //! Fused groups: each block index gathers active groups, then compresses them.
@@ -35,6 +37,8 @@ pub(crate) trait Wide {
     fn not(a: Self::V) -> Self::V;
     fn rotl(a: Self::V, r: u32) -> Self::V;
     fn to_lanes(v: Self::V, out: &mut [u32]);
+    /// Inverse of [`Self::to_lanes`]: build a vector from `words[..LANES]`.
+    fn from_lanes(words: &[u32]) -> Self::V;
 
     /// Gather one 64-byte block from each of `n` pointers (`1..=LANES`).
     /// Unused lanes reuse the last valid pointer.
@@ -307,24 +311,23 @@ const fn prefer_group_interleave() -> bool {
     cfg!(all(target_arch = "aarch64", target_endian = "little"))
 }
 
-/// Fused equal-length multi-buffer hash (`n` may exceed `W::LANES`).
+/// Advance every group over the first `nfull` complete blocks of `inputs`.
 ///
-/// `#[inline(always)]` is load-bearing on x86: `#[target_feature]` entries must
-/// absorb this body or AVX codegen degrades.
+/// This is the one full-block schedule: one-shot hashing enters it from the IV,
+/// incremental updates enter it from caller chaining values.
+///
+/// `#[inline(always)]` is load-bearing on x86 for the same reason as
+/// [`hash_equal_wide`].
 #[inline(always)]
-pub(crate) fn hash_equal_wide<W: Wide>(inputs: &[&[u8]], outputs: &mut [[u8; 16]]) {
+fn compress_full_blocks<W: Wide>(
+    states: &mut [[W::V; 4]; MAX_GROUPS],
+    inputs: &[&[u8]],
+    nfull: usize,
+) {
     let n = inputs.len();
-    debug_assert!(n >= 1);
-    debug_assert!(outputs.len() >= n);
-    debug_assert!(inputs.iter().all(|s| s.len() == inputs[0].len()));
-
     let lanes = W::LANES;
     let ngroups = n.div_ceil(lanes);
-    debug_assert!(ngroups <= MAX_GROUPS, "n={n} lanes={lanes}");
-
-    let len = inputs[0].len();
-    let nfull = len / 64;
-    let mut states = [iv_state::<W>(); MAX_GROUPS];
+    debug_assert!(inputs.iter().all(|s| s.len() >= nfull * 64));
 
     if nfull > 0 {
         if ngroups == 1 {
@@ -353,9 +356,9 @@ pub(crate) fn hash_equal_wide<W: Wide>(inputs: &[&[u8]], outputs: &mut [[u8; 16]
                     None
                 };
                 match ngroups {
-                    2 => compress_groups_interleaved::<W, 2>(&mut states, &cur),
-                    3 => compress_groups_interleaved::<W, 3>(&mut states, &cur),
-                    4 => compress_groups_interleaved::<W, 4>(&mut states, &cur),
+                    2 => compress_groups_interleaved::<W, 2>(states, &cur),
+                    3 => compress_groups_interleaved::<W, 3>(states, &cur),
+                    4 => compress_groups_interleaved::<W, 4>(states, &cur),
                     _ => unreachable!("group count exceeds MAX_GROUPS"),
                 }
                 match next {
@@ -375,6 +378,27 @@ pub(crate) fn hash_equal_wide<W: Wide>(inputs: &[&[u8]], outputs: &mut [[u8; 16]
             }
         }
     }
+}
+
+/// Fused equal-length multi-buffer hash (`n` may exceed `W::LANES`).
+///
+/// `#[inline(always)]` is load-bearing on x86: `#[target_feature]` entries must
+/// absorb this body or AVX codegen degrades.
+#[inline(always)]
+pub(crate) fn hash_equal_wide<W: Wide>(inputs: &[&[u8]], outputs: &mut [[u8; 16]]) {
+    let n = inputs.len();
+    debug_assert!(n >= 1);
+    debug_assert!(outputs.len() >= n);
+    debug_assert!(inputs.iter().all(|s| s.len() == inputs[0].len()));
+
+    let lanes = W::LANES;
+    let ngroups = n.div_ceil(lanes);
+    debug_assert!(ngroups <= MAX_GROUPS, "n={n} lanes={lanes}");
+
+    let len = inputs[0].len();
+    let nfull = len / 64;
+    let mut states = [iv_state::<W>(); MAX_GROUPS];
+    compress_full_blocks::<W>(&mut states, inputs, nfull);
 
     for g in 0..ngroups {
         let lo = g * lanes;
@@ -396,5 +420,50 @@ pub(crate) fn hash_equal_wide<W: Wide>(inputs: &[&[u8]], outputs: &mut [[u8; 16]
             compress_wide::<W>(&mut states[g], &m);
         }
         store_digests::<W>(&states[g], lo, gn, outputs);
+    }
+}
+
+/// Advance `chain[i]` over the first `nblocks` complete blocks of `inputs[i]`.
+///
+/// The incremental counterpart of [`hash_equal_wide`]: chaining values come
+/// from and return to the caller, and no padding is applied. Inputs may be
+/// longer than `nblocks * 64`; the excess is not read.
+///
+/// `#[inline(always)]` is load-bearing on x86 (see [`hash_equal_wide`]).
+#[inline(always)]
+pub(crate) fn update_equal_wide<W: Wide>(chain: &mut [[u32; 4]], inputs: &[&[u8]], nblocks: usize) {
+    let n = inputs.len();
+    assert_eq!(chain.len(), n);
+    assert!(n >= 1 && n <= W::LANES * MAX_GROUPS, "n={n}");
+    assert!(inputs.iter().all(|s| s.len() >= nblocks * 64));
+
+    let lanes = W::LANES;
+    let ngroups = n.div_ceil(lanes);
+    let mut states = [iv_state::<W>(); MAX_GROUPS];
+    for g in 0..ngroups {
+        let lo = g * lanes;
+        let hi = (lo + lanes).min(n);
+        for w in 0..4 {
+            // Unused lanes carry an arbitrary value; their results are discarded.
+            let mut words = [0u32; MAX_LANES];
+            for (lane, src) in (lo..hi).enumerate() {
+                words[lane] = chain[src][w];
+            }
+            states[g][w] = W::from_lanes(&words);
+        }
+    }
+
+    compress_full_blocks::<W>(&mut states, inputs, nblocks);
+
+    for g in 0..ngroups {
+        let lo = g * lanes;
+        let hi = (lo + lanes).min(n);
+        for w in 0..4 {
+            let mut words = [0u32; MAX_LANES];
+            W::to_lanes(states[g][w], &mut words[..W::LANES]);
+            for (lane, dst) in (lo..hi).enumerate() {
+                chain[dst][w] = words[lane];
+            }
+        }
     }
 }

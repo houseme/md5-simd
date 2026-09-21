@@ -8,7 +8,7 @@ Ratios below use **baseline time / candidate time**; a value above 1 means faste
 Defaults are `std,opt,digest,simd`. x86_64 single streams use scalar assembly;
 little-endian aarch64 single streams use the `opt` `single-aarch` kernel
 (fast-md5-adapted). Eligible adjacent equal-length runs use SIMD in
-`hash_many`. Incremental multi-stream helpers remain scalar.
+`hash_many` and, for live streams, `update_many` (see *Incremental multi-stream*).
 
 ## Refactor validation (2026-09-19)
 
@@ -489,3 +489,60 @@ batch throughput gains cannot be substituted for that evidence.
   new measurements.
 - Microbenchmarks do not establish application throughput, tail latency, or
   end-to-end behavior. Measure those in the consuming application.
+
+## Incremental multi-stream (`update_many`)
+
+`hash_many` needs complete messages. A streaming upload never has one: the server
+holds only the current chunk of each stream, and MD5 chaining values must survive
+between calls. `update_many` covers that shape. The benchmark feeds N live 1 MiB
+streams one chunk per round; the baseline updates the same `Md5State`s one by one
+on the active single-stream backend (assembly on x86_64).
+
+| Host | Streams × chunk | Sequential / `update_many` | Stability |
+| --- | --- | ---: | --- |
+| Apple Silicon, NEON8 | 8 × 64 KiB | **3.11×** | accepted |
+| Apple Silicon, NEON8 | 16 × 64 KiB | **4.10×** | accepted |
+| Intel Core i7-9700, AVX2 | 4 × 64 KiB | **2.92×** | accepted |
+| Intel Core i7-9700, AVX2 | 8 × 64 KiB | **5.64×** | accepted |
+| Intel Core i7-9700, AVX2 | 16 × 64 KiB | **5.47×** | accepted |
+
+All cells: A1→B1→B2→A2, 3 rounds × 20 samples, 3 s measurement, 1 s warm-up, 2 s
+cooldown, 3% drift gate; the i7-9700 runs were pinned to one core. Extracting the
+shared full-block loop left `hash_many_equal_16/1048576` unchanged (1.005× and
+1.001× before/after on the two hosts). AVX-512 was cross-compiled and is covered by
+the same generic kernel, but this change was **not executed on AVX-512 hardware**.
+
+On x86_64 an incremental window holds one SIMD group. x86 compresses the groups of
+a block one after the other, so a wider window gains nothing over separate calls
+and makes every block touch twice as many streams. Same-host ABBA of the
+four-group window against the one-group window on the i7-9700: **1.172×** at 16
+streams and **1.173×** at 32 (both accepted); 16 streams went from 4.69× to 5.47×
+over sequential updates. aarch64 interleaves the chains of several groups and
+keeps the four-group window.
+
+`examples/streaming_uploads.rs` drives a server-shaped workload (192 uploads of
+2–6 MiB plus some tiny ones, 256 KiB chunks, periodic stalls, uploads admitted and
+retired as they complete) and checks every digest:
+
+| Uploads in flight | Apple Silicon | i7-9700 |
+| ---: | ---: | ---: |
+| 4 | 1.21× | 1.43× |
+| 8 | 2.55× | 4.41× |
+| 16 | 3.56× | 4.38× |
+| 32 | 4.90× | 4.35× |
+| 64 | 4.92× | 4.39× |
+
+These are single runs of the example, not ABBA cells; they show the shape, the
+ABBA table above carries the claim.
+
+These are aggregate-throughput results for independent streams. They say nothing
+about single-message latency, and the gain disappears when fewer than four streams
+hold a complete block at the same time.
+
+Evidence: `docs/validation/2026-09-21-update-many-abba.json`. Reproduce with
+
+```bash
+ABBA_BASELINE_FILTER='^update_many_16x1mib/sequential-update/65536$' \
+ABBA_CANDIDATE_FILTER='^update_many_16x1mib/md5-simd lanes=8/65536$' \
+scripts/run_throughput_abba.sh .
+```

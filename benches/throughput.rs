@@ -13,7 +13,7 @@
 //! ```
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use md5_simd::{DigestMd5, Md5, Md5Engine, backend_name, digest};
+use md5_simd::{DigestMd5, Md5, Md5Engine, Md5State, backend_name, digest};
 use std::hint::black_box;
 
 fn ref_md5(data: &[u8]) -> [u8; 16] {
@@ -174,6 +174,73 @@ fn bench_hash_many(c: &mut Criterion) {
     bench_hash_many_n::<64>(c);
 }
 
+/// Incremental multi-stream: N live streams, each fed one `chunk` per round.
+///
+/// This is the streaming-upload shape: no message is complete when hashing
+/// starts, so `hash_many` cannot be used and the chaining values must survive
+/// between calls. `sequential-update` feeds the same chunks to the same states
+/// one stream at a time on the active single-stream backend.
+fn bench_update_many_n<const N: usize>(c: &mut Criterion) {
+    const MESSAGE: usize = 1024 * 1024;
+    let mut group = c.benchmark_group(format!("update_many_{N}x1mib"));
+    let engine = Md5Engine::new();
+    let storage: Vec<Vec<u8>> = (0..N)
+        .map(|lane| {
+            pattern(MESSAGE)
+                .into_iter()
+                .map(|b| b.wrapping_add(lane as u8))
+                .collect()
+        })
+        .collect();
+    group.throughput(Throughput::Bytes((MESSAGE * N) as u64));
+    for &chunk in &[1024usize, 64 * 1024, 1024 * 1024] {
+        let rounds: Vec<Vec<&[u8]>> = (0..MESSAGE / chunk)
+            .map(|r| {
+                storage
+                    .iter()
+                    .map(|m| &m[r * chunk..(r + 1) * chunk])
+                    .collect()
+            })
+            .collect();
+        group.bench_with_input(
+            BenchmarkId::new(format!("md5-simd lanes={}", engine.lanes()), chunk),
+            &rounds,
+            |b, rounds| {
+                b.iter(|| {
+                    let mut states = [Md5State::new(); N];
+                    for round in rounds {
+                        engine.update_many(&mut states, black_box(round));
+                    }
+                    states[N - 1].finalize()
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("sequential-update", chunk),
+            &rounds,
+            |b, rounds| {
+                b.iter(|| {
+                    let mut states = [Md5State::new(); N];
+                    for round in rounds {
+                        for (state, input) in states.iter_mut().zip(black_box(round)) {
+                            state.update(input);
+                        }
+                    }
+                    states[N - 1].finalize()
+                })
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_update_many(c: &mut Criterion) {
+    bench_update_many_n::<4>(c);
+    bench_update_many_n::<8>(c);
+    bench_update_many_n::<16>(c);
+    bench_update_many_n::<32>(c);
+}
+
 fn bench_hash_many_schedules(c: &mut Criterion) {
     let engine = Md5Engine::new();
     let schedules: &[(&str, &[usize])] = &[
@@ -327,6 +394,7 @@ criterion_group!(
     bench_digest_streaming,
     bench_hash_many,
     bench_hash_many_schedules,
+    bench_update_many,
     bench_pair
 );
 criterion_main!(benches);

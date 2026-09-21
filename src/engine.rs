@@ -1,4 +1,4 @@
-//! Batch hashing and scalar incremental multi-stream operations.
+//! Batch hashing and incremental multi-stream operations.
 //!
 //! MD5 is for legacy interoperability and non-adversarial checksums only.
 
@@ -138,16 +138,21 @@ impl Md5Engine {
         backend::hash(input)
     }
 
-    /// Increment several independent streams through the scalar backend.
+    /// Append `inputs[i]` to `states[i]` for several independent streams.
+    ///
+    /// With feature `simd`, streams that hold complete blocks share SIMD
+    /// registers, so this is the incremental counterpart of [`Self::hash_many`]:
+    /// the messages need not be complete, equally long, block-aligned, or all
+    /// supplied with data in the same call. Best throughput comes from handing
+    /// [`Self::lanes`] or more streams a block-aligned chunk each. Fewer than
+    /// four streams, partial blocks, and targets without a SIMD kernel use the
+    /// active single-stream backend.
     ///
     /// # Panics
     /// Panics if `states.len() != inputs.len()`.
     #[inline]
     pub fn update_many(self, states: &mut [Md5State], inputs: &[&[u8]]) {
-        assert_eq!(states.len(), inputs.len());
-        for (state, input) in states.iter_mut().zip(inputs.iter()) {
-            state.update(input);
-        }
+        simd::update_many_dispatch(states, inputs);
     }
 
     /// Snapshot-finalize several streams sequentially (states are not consumed).
