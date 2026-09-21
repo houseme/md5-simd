@@ -2,7 +2,7 @@
 /target/
 /target-*/
 /dist/
-/release-artifacts/
+/.code-workspace/release-artifacts/
 **/*.rs.bk
 *.pdb
 *.dSYM/
@@ -11,7 +11,7 @@
 /.abba*/
 /abba-*/
 /criterion/
-/artifacts/
+/.code-workspace/artifacts/
 /tmp/
 /logs/
 /*.log
@@ -50,3 +50,4 @@ lcov.info
 .codex/
 .agents/
 docs/plans
+.code-workspace
